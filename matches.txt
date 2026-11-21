@@ -1,0 +1,2 @@
+// Un matchId par ligne (ex: EUW1_7123456789)
+// Utilisation : python download.py --file matches.txt
