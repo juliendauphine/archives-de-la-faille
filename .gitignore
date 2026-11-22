@@ -2,4 +2,5 @@ key.txt
 __pycache__/
 *.pyc
 .env
-
+games_v5/
+*.ipynb

@@ -20,17 +20,17 @@ const heat=vals=>{
   const mn=Math.min(...a),mx=Math.max(...a);if(mn===mx)return()=>'';
   return v=>v==null?'':v===mx?'background:color-mix(in srgb,var(--gold) 55%,transparent);font-weight:700;color:var(--ink)'
     :'background:color-mix(in srgb,color-mix(in srgb,var(--blue) '+Math.round((v-mn)/(mx-mn)*100)+'%,var(--red)) 32%,transparent)'};
-
+ 
 document.body.insertAdjacentHTML('afterbegin','<header><b>Archives de la Faille</b><nav style="display:flex;gap:18px">'+
 [['index.html','Historique','h'],['players.html','Joueurs','p'],['champions.html','Champions','c'],['records.html','Records','r']]
 .map(x=>'<a href="'+x[0]+'" class="'+((document.body.dataset.page==='j'?'p':document.body.dataset.page)===x[2]?'on':'')+'">'+x[1]+'</a>').join('')+'</nav></header>');
-
+ 
 Promise.all([
   fetch('data.json').then(r=>{if(!r.ok)throw 0;return r.json()}),
   fetch('https://ddragon.leagueoflegends.com/api/versions.json').then(r=>r.json()).then(v=>v[0]).catch(()=>null)
 ]).then(async([D,v])=>{if(v){VER=v;try{const j=await(await fetch('https://ddragon.leagueoflegends.com/cdn/'+v+'/data/en_US/champion.json')).json();for(const k in j.data)NAMES[k]=j.data[k].name}catch(_){}}D.roles=D.roles||{};D.rows=D.rows.filter(r=>{const R=D.roles[r.p];return !R||!R.length||R.includes(r.pos)});({j:player,h:history,p:players,c:champions,r:records})[document.body.dataset.page](D)})
 .catch(e=>{console.error(e);app.innerHTML='<p class="empty">Impossible de charger les données. Lance <code>python serve.py</code> puis ouvre http://localhost:8000</p>'});
-
+ 
 function summ(R){
   const o={n:R.length,wr:100*R.filter(r=>r.win).length/R.length};
   S.forEach(s=>{const v=R.map(r=>r[s[0]]).filter(x=>x!=null);o[s[0]]=v.length?v.reduce((a,b)=>a+b)/v.length:null});
@@ -42,7 +42,7 @@ function agg(D){
   D.tracked.forEach(p=>{if(!out.some(o=>o.p===p))out.push({p,pos:null,n:0,wr:null})});
   return out;
 }
-
+ 
 function players(D){
   let key='n',dir=-1,role='';
   const A=agg(D);
@@ -64,7 +64,7 @@ function players(D){
     $('#r').onchange=e=>{role=e.target.value;draw()};
   };draw();
 }
-
+ 
 function records(D){
   let mode='game',min=3;
   const draw=()=>{
@@ -84,7 +84,7 @@ function records(D){
     const mi=$('#min');if(mi)mi.onchange=()=>{min=Math.max(1,+mi.value||1);draw()};
   };draw();
 }
-
+ 
 function chart(g){
   if(!g.gd.length)return '<p><small>Pas de timeline : courbe d’or indisponible.</small></p>';
   const m=Math.max(1000,...g.gd.map(Math.abs)),n=g.gd.length-1||1,id='c'+g.id.replace(/\W/g,'');
@@ -121,11 +121,16 @@ function history(D){
   const chip=(t,G)=>{
     const w=G.filter(g=>won(g,sel)).length,wr=G.length?100*w/G.length:0;
     return '<div class="chip"><span>'+esc(t)+'</span><b class="'+(wr>50?'win':wr<50?'loss':'')+'">'+num(wr)+' %</b><small>'+w+'V – '+(G.length-w)+'D</small></div>'};
+  const pie=(t,G)=>{
+    const X=G.filter(g=>ours(g,sel)===t),n=X.length,w=X.filter(g=>won(g,sel)).length,wr=n?100*w/n:0,c=t===100?'blue':'red';
+    return '<div class="chip pie"><div class="pl8" style="color:var(--'+c+')">'+(t===100?'Blue':'Red')+' side</div>'+
+      '<div class="pc" style="--ring:var(--'+c+');background:'+(n?'conic-gradient(var(--win) 0 '+wr+'%,var(--red) '+wr+'% 100%)':'var(--line)')+'"><span class="'+(!n?'':wr>50?'win':wr<50?'loss':'')+'">'+(n?num(wr)+' %':'–')+'</span></div>'+
+      '<div class="pn8">'+n+' partie'+(n>1?'s':'')+'</div><small>'+w+'V – '+(n-w)+'D</small></div>'};
   const draw=()=>{
     const G=D.games.filter(g=>g.players.some(mine)||(!sel&&!g.players.some(p=>p.tr)));
     const qs=[...new Set(G.map(qn))];
     app.innerHTML='<h1>Historique</h1><div class="bar"><label>Joueur <select id="f"><option value="">Tous</option>'+D.tracked.map(t=>'<option'+(t===sel?' selected':'')+'>'+esc(t)+'</option>').join('')+'</select></label><span>'+G.length+' partie(s)</span></div>'+
-    (G.length?'<div class="chips">'+chip('Winrate équipe',G)+(qs.length>1?qs.map(q=>chip(q,G.filter(g=>qn(g)===q))).join(''):'')+'</div>'+
+    (G.length?'<div class="top"><div class="left"><div class="chips">'+chip('Winrate équipe',G)+(qs.length>1?qs.map(q=>chip(q,G.filter(g=>qn(g)===q))).join(''):'')+'</div><img class="vnl" src="assets/vanilla.png" alt="Vanilla Gaming"></div><div class="pies">'+pie(100,G)+pie(200,G)+'</div></div>'+
     G.map(g=>{
       const t=ours(g,sel),w=won(g,sel),us=g.players.filter(p=>p.team===t),op=g.players.filter(p=>p.team!==t);
       return '<div class="g '+(w?'w':'l')+'" id="'+esc(g.id)+'"><div class="gh" tabindex="0"><span class="side '+(t===100?'b':'r')+'">'+(t===100?'Blue':'Red')+' side</span><b class="'+(w?'win':'loss')+'">'+(w?'Victoire':'Défaite')+'</b><span class="tm">'+us.map(p=>img(p.champ,36)).join('')+'<i>vs</i>'+op.map(p=>img(p.champ,36)).join('')+'</span><span class="meta">'+esc(qn(g))+' · '+mmss(g.dur)+' · '+dt(g.date)+(dpmUrl(g,t)?' · <a class="ext" href="'+dpmUrl(g,t)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">dpm.lol ↗</a>':'')+' · <a class="ext" href="'+draftUrl(g)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">Draft ↗</a></span></div><div class="gd"></div></div>';
@@ -142,7 +147,7 @@ function history(D){
   const id=decodeURIComponent(location.hash.slice(1)),el=id&&document.getElementById(id);
   if(el){el.querySelector('.gh').click();el.scrollIntoView()}
 }
-
+ 
 function champions(D){
   const cnt={};D.rows.forEach(r=>cnt[r.pos]=(cnt[r.pos]||0)+1);
   const oi=r=>RORD.indexOf(r)<0?9:RORD.indexOf(r);
@@ -170,7 +175,7 @@ function champions(D){
     app.querySelectorAll('th.s').forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(k===key)dir=-dir;else{key=k;dir=k==='c'?1:-1}draw()});
   };draw();
 }
-
+ 
 const TEAM={name:'Vanilla Gaming',logo:'assets/vanilla.png'};
 const FR='<svg viewBox="0 0 3 2" width="22" height="15" style="border-radius:2px;vertical-align:middle"><rect width="1" height="2" fill="#0055a4"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ef4135"/></svg>';
 function player(D){
@@ -197,3 +202,4 @@ function player(D){
   L.map(x=>'<tr><td><span class="cell">'+img(x.c,28)+'<span>'+esc(x.c)+'</span></span></td>'+cols.map(c=>'<td style="'+(c[0]==='n'?'':H[c[0]](x[c[0]]))+'">'+fs(x[c[0]],c)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>'+
   '<p class="legend">Stats de '+esc(name)+' uniquement en '+roleName(role)+'. Couleurs comparées entre ses champions.</p>';
 }
+ 
