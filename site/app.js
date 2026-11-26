@@ -57,7 +57,7 @@ function players(D){
     R=[...R].sort((a,b)=>key==='p'?(a.p.localeCompare(b.p)||RORD.indexOf(a.pos)-RORD.indexOf(b.pos))*dir:dir*((b[key]??-1e9)-(a[key]??-1e9))*-1);
     app.innerHTML='<h1>Joueurs</h1><div class="bar"><label>Rôle <select id="r"><option value="">Tous</option>'+roles.map(r=>'<option value="'+r+'"'+(r===role?' selected':'')+'>'+ROLES[r]+'</option>').join('')+'</select></label></div>'+
     '<div class="scroll"><table><thead><tr><th class="s'+(key==='p'?' cur':'')+'" data-k="p">Joueur</th><th>Rôle</th>'+cols.map(c=>'<th class="s'+(c[0]===key?' cur':'')+'" data-k="'+c[0]+'">'+c[1]+(c[0]===key?(dir<0?' ▾':' ▴'):'')+'</th>').join('')+'</tr></thead><tbody>'+
-    R.map(r=>'<tr><td>'+(r.pos==null?who(r.p):'<a class="pl" href="player.html?p='+encodeURIComponent(r.p)+'&r='+r.pos+'">'+who(r.p)+'</a>')+'</td><td>'+(r.pos==null?'–':roleName(r.pos))+'</td>'+cols.map(c=>{
+    R.map(r=>'<tr><td><a class="pl" href="player.html?p='+encodeURIComponent(r.p)+(r.pos==null?'':'&r='+r.pos)+'"'+(r.pos==null?' title="Aucune partie dans le dossier : page basée sur la SoloQ / Flex de la saison"':'')+'>'+who(r.p)+'</a></td><td>'+(r.pos==null?'–':roleName(r.pos))+'</td>'+cols.map(c=>{
       const k=c[0],st=k==='n'||!r.n?'':(H[r.pos||'']?.[k]?.(r[k])||'');
       return '<td style="'+st+'">'+(k==='n'?r.n:fs(r[k],c))+'</td>'}).join('')+'</tr>').join('')+
     '</tbody></table></div><p class="legend">Une ligne par joueur et par rôle joué. Les couleurs comparent chaque stat entre joueurs du même rôle (rouge = plus bas, bleu = plus haut, doré = meilleur). Les stats @15 ne comptent que les parties de 15 min ou plus avec timeline. KDA = total (K+A) / total des morts.</p>';
@@ -222,7 +222,7 @@ function opponents(D){
   };draw();
 }
 
-function playerRecords(D,R){
+function playerRecords(D,R,p,qOf){
   if(!R.length)return '';
   const best=(fn,filter=()=>true)=>{
     const L=R.filter(r=>filter(r)&&fn(r)!=null);
@@ -232,8 +232,11 @@ function playerRecords(D,R){
   const sub=r=>{
     if(!r)return '';
     const g=(D.games||[]).find(x=>x.id===r.game);
-    const q=g?qn(g):'';
-    return '<a class="rec-sub" href="index.html#'+esc(r.game)+'">'+img(r.champ,18,1)+'<span>'+esc(NAMES[r.champ]||r.champ)+(q?' · '+esc(q):'')+(r.date?' · '+fmtDate(r.date):'')+'</span></a>';
+    const q=g?qn(g):(qOf&&qOf(r))||'';
+    // partie du dossier -> historique du site ; partie SoloQ / Flex -> dpm.lol
+    const [nm,tg]=(p||'').split('#');
+    const href=g?'index.html#'+esc(r.game):'https://dpm.lol/'+encodeURIComponent(nm)+'-'+encodeURIComponent(tg||'')+'?match='+String(r.game).split('_').pop();
+    return '<a class="rec-sub" href="'+href+'"'+(g?'':' target="_blank" rel="noopener"')+'>'+img(r.champ,18,1)+'<span>'+esc(NAMES[r.champ]||r.champ)+(q?' · '+esc(q):'')+(r.date?' · '+fmtDate(r.date):'')+'</span></a>';
   };
   const cards=[
     {t:'Plus de kills',r:best(r=>r.k),v:r=>num(r.k)},
@@ -345,15 +348,25 @@ function emeraldBadges(D, p, role, R){
 }
 
 function player(D){
-  const q=new URLSearchParams(location.search),p=q.get('p')||'',role=q.get('r')||'';
+  const q=new URLSearchParams(location.search),p=q.get('p')||'';
+  const RK=(D.ranked||{})[p]||{};
+  const nRanked=r=>srcRows(D,p,r,'soloq').length+srcRows(D,p,r,'flex').length;
+  const cnt=L=>{const c={};L.forEach(x=>{if(x)c[x]=(c[x]||0)+1});return Object.keys(c).sort((a,b)=>c[b]-c[a])};
+  const dosRoles=cnt(D.rows.filter(r=>r.p===p).map(r=>r.pos));
+  let role=q.get('r')||'';
+  // pas de rôle dans l'URL : rôle le plus joué dans le dossier, sinon 1er rôle de players.txt avec 10+ parties classées, sinon le plus joué en classée
+  if(!role)role=dosRoles[0]||(D.roles[p]||[]).find(r=>nRanked(r)>=10)||cnt(Object.values(RK).flatMap(c=>c.rows||[]).map(r=>r.pos))[0]||'';
   const R=D.rows.filter(r=>r.p===p&&r.pos===role);
-  if(!R.length){app.innerHTML='<p class="empty">Joueur introuvable. <a class="ext" href="players.html">Retour aux joueurs</a></p>';return}
-  const o=summ(R),name=p.split('#')[0],w=R.filter(r=>r.win).length,dts=R.map(r=>r.date).filter(Boolean);
+  // aucune partie dans le dossier à ce rôle : la page se base sur la SoloQ / Flex de la saison
+  const fromRanked=!R.length,B=fromRanked?[...srcRows(D,p,role,'soloq'),...srcRows(D,p,role,'flex')]:R;
+  if(!B.length){app.innerHTML='<p class="empty">'+(D.tracked.includes(p)?'Aucune partie pour '+esc(p.split('#')[0])+(role?' en '+roleName(role):'')+' (ni dans le dossier, ni en SoloQ / Flex cette saison).':'Joueur introuvable.')+' <a class="ext" href="players.html">Retour aux joueurs</a></p>';return}
+  const soloIds=new Set((RK.soloq?.rows||[]).map(r=>r.game)),qOf=r=>soloIds.has(r.game)?'Classée solo/duo':'Classée flex';
+  const o=summ(B),name=p.split('#')[0],w=B.filter(r=>r.win).length,dts=B.map(r=>r.date).filter(Boolean);
   const first=dts.length?new Date(Math.min(...dts)):null,last=dts.length?new Date(Math.max(...dts)):null;
-  const t=k=>R.reduce((a,r)=>a+r[k],0),av=k=>num(t(k)/R.length,1);
-  const others=[...new Set(D.rows.filter(r=>r.p===p&&r.pos!==role).map(r=>r.pos))];
+  const t=k=>B.reduce((a,r)=>a+r[k],0),av=k=>num(t(k)/B.length,1);
+  const others=RORD.filter(r=>r!==role&&(dosRoles.includes(r)||((D.roles[p]||[]).includes(r)&&nRanked(r))));
   document.title=name+' – Archives de la Faille';
-  const m={};R.forEach(r=>(m[r.champ]??=[]).push(r));
+  const m={};B.forEach(r=>(m[r.champ]??=[]).push(r));
   const L=Object.entries(m).map(([c,x])=>({c,...summ(x)}));
   const cols=[['n','Parties',0],['wr','Victoires %',0],...S];
   const fav=D.champs&&D.champs[p];
@@ -362,15 +375,17 @@ function player(D){
   app.innerHTML='<p><a class="ext" href="players.html">← Joueurs</a></p>'+
   '<section class="hero"><div class="pic"><img class="ph" src="assets/players/'+encodeURIComponent(name)+'.png" alt="" onerror="this.onerror=null;this.src=\'assets/player.svg\'"><img class="tl" src="'+TEAM.logo+'" alt="'+TEAM.name+'"></div>'+
   '<div class="hi"><div class="meta">'+(last?'<b>'+last.getFullYear()+'</b>':'')+'<span>'+roleName(role)+'</span><span><img src="'+TEAM.logo+'" alt=""><b>'+TEAM.name+'</b></span><span>'+FR+' France</span></div>'+
-  '<h1>'+esc(name)+'</h1><p>'+R.length+' parties avec '+TEAM.name+(first?' depuis '+first.toLocaleDateString('fr-FR',{month:'long',year:'numeric'}):'')+' · '+esc(p.slice(name.length))+'</p>'+
+  '<h1>'+esc(name)+'</h1><p>'+(fromRanked
+    ?'Aucune partie avec '+TEAM.name+' pour l’instant · stats SoloQ / Flex de la saison ('+B.length+' parties)'
+    :R.length+' parties avec '+TEAM.name+(first?' depuis '+first.toLocaleDateString('fr-FR',{month:'long',year:'numeric'}):''))+' · '+esc(p.slice(name.length))+'</p>'+
   (others.length?'<p style="margin-top:8px">Autres rôles : '+others.map(r=>'<a class="ext" href="player.html?p='+encodeURIComponent(p)+'&r='+r+'">'+roleName(r)+'</a>').join(' · ')+'</p>':'')+'</div>'+
-  '<div class="stats"><div class="st"><small>Parties</small><b>'+R.length+'</b><small>'+w+' V · '+(R.length-w)+' D</small></div>'+
-  '<div class="st"><small>Victoires</small><b>'+num(o.wr)+' %</b><small>'+w+' sur '+R.length+'</small></div>'+
+  '<div class="stats"><div class="st"><small>'+(fromRanked?'Parties classées':'Parties')+'</small><b>'+B.length+'</b><small>'+w+' V · '+(B.length-w)+' D</small></div>'+
+  '<div class="st"><small>Victoires</small><b>'+num(o.wr)+' %</b><small>'+w+' sur '+B.length+'</small></div>'+
   '<div class="st"><small>KDA</small><b>'+num(o.kda,2)+'</b><small>'+av('k')+' / '+av('d')+' / '+av('a')+'</small></div></div></section>'+
   emeraldBadges(D,p,role,R)+
-  playerRecords(D,R)+
-  '<div id="radar"></div><div id="scatter"></div><h2 style="margin:24px 0 10px">Champions joués en '+roleName(role)+'</h2><div id="ct"></div>'+
-  '<p class="legend">Stats de '+esc(name)+' uniquement en '+roleName(role)+'. Clique sur un en-tête pour trier. Couleurs comparées entre ses champions.</p>';
+  playerRecords(D,B,p,qOf)+
+  '<div id="radar"></div><div id="scatter"></div><h2 style="margin:24px 0 10px">Champions joués en '+roleName(role)+(fromRanked?' <small>(SoloQ + Flex de la saison)</small>':'')+'</h2><div id="ct"></div>'+
+  '<p class="legend">Stats de '+esc(name)+' uniquement en '+roleName(role)+(fromRanked?', sur ses parties SoloQ et Flex de la saison (aucune partie dans le dossier)':'')+'. Clique sur un en-tête pour trier. Couleurs comparées entre ses champions.</p>';
   ctable($('#ct'),L,{key:'n',dir:-1},cols);
   chartBlock($('#radar'),D,p,role,'Radar',radarRender(D,p,role));
   chartBlock($('#scatter'),D,p,role,'Champions : winrate et écart d’or @15',scatterRender(p,role));

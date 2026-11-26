@@ -4,3 +4,4 @@ __pycache__/
 .env
 games_v5/
 *.ipynb
+*.mp4
