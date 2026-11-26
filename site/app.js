@@ -541,21 +541,23 @@ function scatterRender(p,role){
          '<text transform="translate(16,'+((y0+y1)/2)+') rotate(-90)" text-anchor="middle" font-size="12" fill="var(--mute)">← Perd sa lane     Écart d’or @ 15 min     Gagne sa lane →</text>';
       host.innerHTML=head+badges+'<div class="scroll"><svg class="chartsvg" viewBox="0 0 800 520">'+s+'</svg></div><p class="legend">'+esc(p.split('#')[0])+' – '+roleName(role)+' : '+L.length+' champion(s), minimum '+min+' partie(s). Taille de l’icône = playrate du champion sur ce rôle. Survole une icône pour le détail.</p>';
       const pts=[...host.querySelectorAll('.sc-pt')];
-      const restore=()=>{
-        const parent=pts[0]?.parentNode;
-        if(!parent)return;
-        [...pts].sort((a,b)=>+a.dataset.idx-+b.dataset.idx).forEach(el=>parent.appendChild(el));
-      };
+      // Chrome/Brave : déplacer un nœud dans le DOM (appendChild) remet son style à zéro et annule
+      // la transition CSS. On ne déplace donc l'élément qu'à l'entrée (pour le passer au premier plan),
+      // on force le calcul du style à scale(1) AVANT d'ajouter .is-focus pour que l'agrandissement
+      // soit animé, et on ne réordonne plus rien à la sortie pour que le rétrécissement le soit aussi.
       const focusIdx=idx=>{
         const target=pts.find(el=>+el.dataset.idx===idx);
-        if(!target||!target.parentNode)return;
-        target.parentNode.appendChild(target);
+        const parent=target?.parentNode;
+        if(!parent)return;
+        if(parent.lastElementChild!==target){
+          parent.appendChild(target);
+          void getComputedStyle(target).transform;
+        }
         target.classList.add('is-focus');
       };
       const unfocusIdx=idx=>{
         const target=pts.find(el=>+el.dataset.idx===idx);
         if(target)target.classList.remove('is-focus');
-        restore();
       };
       pts.forEach(g=>{
         const idx=+g.dataset.idx;
