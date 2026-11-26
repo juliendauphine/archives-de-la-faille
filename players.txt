@@ -1,11 +1,11 @@
 // Un joueur par ligne, au format NomDeJeu#TAG (insensible à la casse)
 // Les lignes qui commencent par // sont ignorées
-CMS Thunder#EUW$ADC$Jungle
-PoTato Seed#EUW$Mid$Top
-Zx Oxygen#EUW$Jungle$Support
-Skysdrow#16214$Mid$Support
-Darkham94#EUW$Support$Mid
-Dreamin91#EUW$ADC$Top$Support
-SarbacanePiquant#EUW$ADC$Jungle
-Honey Badger#2845$Jungle$ADC
-MorseMinable#SPA$Top$Mid
+CMS Thunder#EUW$ADC$Jungle$Twitch
+PoTato Seed#EUW$Mid$Top$Sylas
+Zx Oxygen#EUW$Jungle$Support$Kayn
+Skysdrow#16214$Mid$Support$Taliyah
+Darkham94#EUW$Support$Mid$Morgana
+Dreamin91#EUW$ADC$Top$Support$Miss Fortune
+SarbacanePiquant#EUW$ADC$Jungle$Vayne
+Honey Badger#2845$Jungle$ADC$Jarvan IV
+MorseMinable#SPA$Top$Mid$Sion

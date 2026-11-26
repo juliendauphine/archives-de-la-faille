@@ -79,4 +79,190 @@ a.pl{color:inherit;text-decoration:none;font-weight:600}a.pl:hover{color:var(--g
 .top .chips{margin-bottom:0}
 .vnl{height:100px;width:auto;align-self:center;margin:auto 0}
 @media(prefers-color-scheme:light){.vnl{filter:brightness(.45) saturate(1.6)}}
- 
+body{position:relative;overflow-x:hidden}
+header{position:relative;z-index:2}main{position:relative;z-index:1}
+.splash{position:absolute;top:56px;right:0;width:min(640px,50vw);height:min(88vh,800px);z-index:0;pointer-events:none}
+.splash img{width:100%;height:100%;object-fit:cover;object-position:55% 15%;
+-webkit-mask-image:linear-gradient(to bottom,rgba(0,0,0,.8),rgba(0,0,0,0)),linear-gradient(to right,transparent,#000 40%);-webkit-mask-composite:source-in;
+mask-image:linear-gradient(to bottom,rgba(0,0,0,.8),rgba(0,0,0,0)),linear-gradient(to right,transparent,#000 40%);mask-composite:intersect}
+th.s:hover{color:var(--ink)}
+.splash{top:0;width:min(760px,55vw);height:min(92vh,920px)}
+/* opacité globale de l'image du champion : même valeur à toutes les largeurs de fenêtre (0 = invisible, 1 = pleine) */
+.splash{opacity:.4}
+.cblock{margin:22px 0}.cblock>.bar{margin-bottom:10px}.cblock>.bar b{color:var(--ink);margin-right:8px}
+.cblock .cbody{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.cblock .scroll{border:0;background:none;border-radius:0}
+.cblock small{display:block;margin-top:6px}
+button:disabled{opacity:.4;cursor:not-allowed}
+svg.chartsvg{display:block;width:100%;min-width:640px;height:auto}
+.chart svg{height:auto;max-height:300px}
+code{background:var(--bg);padding:1px 5px;border-radius:4px}
+.warn{color:var(--gold);margin:8px 0 0;font-size:13px}
+.dtl{margin-top:10px}.dtl summary{cursor:pointer;color:var(--mute);font-size:13px}.dtl .scroll{margin-top:8px}
+.sc-pt {
+  cursor: pointer;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.sc-pt circle:last-of-type {
+  transition: stroke 0.15s ease, stroke-width 0.15s ease;
+}
+.sc-pt:hover {
+  transform: scale(1.18);
+}
+.sc-pt:hover circle:last-of-type {
+  stroke: var(--gold);
+  stroke-width: 2.5;
+}
+.chartsvg:has(.sc-pt:hover) .sc-pt:not(:hover) {
+  opacity: 0.55;
+}
+.sc-pt:hover,
+.sc-pt.is-focus {
+  transform: scale(1.18);
+}
+.sc-pt:hover circle:last-of-type,
+.sc-pt.is-focus circle:last-of-type {
+  stroke: var(--gold);
+  stroke-width: 2.5;
+}
+.prec {
+  margin: 22px 0;
+}
+.prec h2 {
+  margin: 0 0 12px;
+  font-size: 1.25rem;
+}
+.prec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+.prec-card {
+  background: var(--card, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prec-card small {
+  color: var(--mute);
+  font-size: 0.85rem;
+}
+.prec-card b {
+  font-size: 1.55rem;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.rec-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mute);
+  text-decoration: none;
+  font-size: 0.85rem;
+  margin-top: 2px;
+}
+.rec-sub:hover {
+  color: var(--ink);
+}
+.embadges {
+  margin: 20px 0 6px;
+}
+.embadges h2 {
+  margin: 0 0 10px;
+  font-size: 1.2rem;
+}
+.embadges-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ebadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.85rem;
+}
+.ebadge.high {
+  background: color-mix(in srgb, var(--blue) 20%, transparent);
+  border-color: color-mix(in srgb, var(--blue) 55%, transparent);
+  color: var(--ink);
+}
+.ebadge.high b {
+  color: var(--blue);
+}
+.ebadge.low {
+  background: color-mix(in srgb, var(--red) 20%, transparent);
+  border-color: color-mix(in srgb, var(--red) 55%, transparent);
+  color: var(--ink);
+}
+.ebadge.low b {
+  color: var(--red);
+}
+.ebadge small {
+  color: var(--mute);
+  font-size: 0.76rem;
+}
+
+.embadges {
+  margin: 20px 0 6px;
+}
+.embadges h2 {
+  margin: 0 0 10px;
+  font-size: 1.2rem;
+}
+.embadges-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ebadge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: default;
+}
+.ebadge.high {
+  background: color-mix(in srgb, var(--blue) 20%, transparent);
+  border-color: color-mix(in srgb, var(--blue) 55%, transparent);
+  color: var(--blue);
+}
+.ebadge.low {
+  background: color-mix(in srgb, var(--red) 20%, transparent);
+  border-color: color-mix(in srgb, var(--red) 55%, transparent);
+  color: var(--red);
+}
+.ebadge::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  background: #141821;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+  z-index: 20;
+}
+.ebadge:hover::after {
+  opacity: 1;
+}
