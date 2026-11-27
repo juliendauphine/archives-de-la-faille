@@ -491,6 +491,9 @@ function adviceBlock(host,D,p,role){
     const sel0=()=>off();   // sélection par défaut : le pool conseillé n°1
     const ptitle=(q,i)=>q.detected?'Pool détecté':'Pool conseillé #'+(i+1-off());
     let sel=sel0();
+    // synergies : lane alliée affichée sous le graphe des matchups (par défaut la lane la plus liée au rôle)
+    const myLane=BROLE[role],synLanes=Object.keys(LANE_FR).filter(l=>l!==myLane);
+    let synLane=myLane==='support'?'bottom':myLane==='bottom'?'support':myLane==='jungle'?'middle':'jungle';
     const icon=(c,x,y,s,extra)=>'<image href="https://ddragon.leagueoflegends.com/cdn/'+VER+'/img/champion/'+encodeURIComponent(champId(c))+'.png" x="'+x+'" y="'+y+'" width="'+s+'" height="'+s+'"'+(extra||'')+'><title>'+nm(c)+'</title></image>';
     const cards=pool=>'<div class="pool-grid">'+pool.champs.map(c=>{
       const o=byC[champId(c)],isMain=c===pool.main,isBlind=c===pool.blind,pc=RD.p_counter[c];
@@ -505,26 +508,28 @@ function adviceBlock(host,D,p,role){
         '<div><b style="color:'+pcc(pc)+'">'+(pc==null?'–':num(100*pc)+' %')+'</b><small>chance d’être contré'+(pc<.3?' · très bon blind':pc<.5?' · blind correct':'')+'</small></div>'+
         (must[c]?'<div><small>Obligatoire : '+esc(must[c])+'</small></div>':'')+
         '</div></div></article>'}).join('')+'</div>';
-    const graph=pool=>{
-      const champs=pool.champs.filter(c=>RD.d2[c]),k=champs.length,opps=RD.opps;
-      const rows=champs.map(c=>RD.d2[c]);
+    // T = {opps, pr, d2} : adversaires de lane (RD) ou alliés d'une lane (RD.syn[lane]) ; syn = graphe des synergies
+    const graph=(pool,T=RD,syn=false)=>{
+      const champs=pool.champs.filter(c=>T.d2[c]),k=champs.length,opps=T.opps;
+      if(!k||!opps.length)return '<p class="legend">Pas de données Δ2 pour ce pool.</p>';
+      const rows=champs.map(c=>T.d2[c]);
       const cover=opps.map((_,j)=>{const v=rows.map(r=>r[j]).filter(x=>x!=null).sort((a,b)=>b-a).slice(0,X);return v.length?v.reduce((a,b)=>a+b,0)/v.length:0});
       const ord=opps.map((_,j)=>j).sort((a,b)=>cover[b]-cover[a]);
       const all=rows.flat().filter(x=>x!=null).map(Math.abs).sort((a,b)=>a-b);
       const lim=Math.max(2.5,all[Math.floor(all.length*.95)]||0);
       const cw=40,L=220,n=ord.length,W=L+n*cw+80,yPR=10,hPR=110,yCV=yPR+hPR+18,hCV=150,yHM=yCV+hCV+18,ch=38,yIC=yHM+k*ch+12,H=yIC+cw+110;
-      const maxPR=Math.max(...RD.pr),cvMax=Math.max(lim*.6,...cover.map(Math.abs));
+      const maxPR=Math.max(...T.pr),cvMax=Math.max(lim*.6,...cover.map(Math.abs));
       const cy=v=>yCV+hCV/2-(v/cvMax)*(hCV/2);
-      let s='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" class="adv-svg" role="img" aria-label="Couverture des matchups du pool conseillé">';
+      let s='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" class="adv-svg" role="img" aria-label="Couverture des '+(syn?'synergies':'matchups')+' du pool">';
       s+='<text x="'+(L-10)+'" y="'+(yPR+hPR/2+4)+'" class="al" text-anchor="end">Pick rate %</text>';
       s+='<text x="'+(L-10)+'" y="'+(yCV+hCV/2+4)+'" class="al" text-anchor="end">Couverture top-'+X+'</text>';
       s+='<line x1="'+L+'" x2="'+(L+n*cw)+'" y1="'+cy(0)+'" y2="'+cy(0)+'" class="ax"/>';
-      ord.forEach((j,c)=>{const x=L+c*cw,o=opps[j],pr=RD.pr[j],v=cover[j],hp=hPR*pr/maxPR;
+      ord.forEach((j,c)=>{const x=L+c*cw,o=opps[j],pr=T.pr[j],v=cover[j],hp=hPR*pr/maxPR;
         s+='<rect x="'+(x+3)+'" y="'+(yPR+hPR-hp).toFixed(1)+'" width="'+(cw-6)+'" height="'+hp.toFixed(1)+'" class="apr"><title>'+esc(o)+' · '+num(pr,2)+' %</title></rect>';
         s+='<rect x="'+(x+3)+'" y="'+Math.min(cy(v),cy(0)).toFixed(1)+'" width="'+(cw-6)+'" height="'+Math.abs(cy(v)-cy(0)).toFixed(1)+'" fill="'+divColor(v,lim)+'" class="acv"><title>'+esc(o)+' · top-'+X+' '+num(v,2,1)+'</title></rect>';
         champs.forEach((ch_,i)=>{const d=rows[i][j],y=yHM+i*ch;
-          s+=d==null?'<rect x="'+(x+1)+'" y="'+(y+1)+'" width="'+(cw-2)+'" height="'+(ch-2)+'" class="ana"><title>Même champion : impossible en draft</title></rect><text x="'+(x+cw/2)+'" y="'+(y+ch/2+4)+'" class="at amute" text-anchor="middle">—</text>'
-            :'<rect x="'+(x+1)+'" y="'+(y+1)+'" width="'+(cw-2)+'" height="'+(ch-2)+'" fill="'+divColor(d,lim)+'"><title>'+nm(ch_)+' vs '+esc(o)+' : '+num(d,1,1)+' pts</title></rect><text x="'+(x+cw/2)+'" y="'+(y+ch/2+4)+'" class="at" text-anchor="middle" fill="'+(Math.abs(d)>lim*.6?'#fff':'#222')+'">'+num(d,1,1)+'</text>'});
+          s+=d==null?'<rect x="'+(x+1)+'" y="'+(y+1)+'" width="'+(cw-2)+'" height="'+(ch-2)+'" class="ana"><title>'+(syn?'Pas de données':'Même champion : impossible en draft')+'</title></rect><text x="'+(x+cw/2)+'" y="'+(y+ch/2+4)+'" class="at amute" text-anchor="middle">—</text>'
+            :'<rect x="'+(x+1)+'" y="'+(y+1)+'" width="'+(cw-2)+'" height="'+(ch-2)+'" fill="'+divColor(d,lim)+'"><title>'+nm(ch_)+(syn?' avec ':' vs ')+esc(o)+' : '+num(d,1,1)+' pts</title></rect><text x="'+(x+cw/2)+'" y="'+(y+ch/2+4)+'" class="at" text-anchor="middle" fill="'+(Math.abs(d)>lim*.6?'#fff':'#222')+'">'+num(d,1,1)+'</text>'});
         const weak=v<0;
         s+=icon(o,x+2,yIC,cw-4,' clip-path="url(#aclip)"')+(weak?'<rect x="'+(x+1)+'" y="'+(yIC-1)+'" width="'+(cw-2)+'" height="'+(cw-2)+'" class="awk"/>':'');
         s+='<text transform="translate('+(x+cw/2+5)+','+(yIC+cw+6)+') rotate(-90)" text-anchor="end" class="an'+(weak?' aw':'')+'">'+esc(o)+'</text>'});
@@ -652,6 +657,9 @@ function adviceBlock(host,D,p,role){
         '<div class="adv-terms">'+Object.keys(ATERM).filter(t=>A.params.weights[role]?.[t]).map(t=>{const v=pool.z[t];return '<span title="poids '+num(A.params.weights[role][t],1)+'"><small>'+ATERM[t]+'</small><b style="color:'+(v>=0?'var(--win)':'var(--red)')+'">'+num(v,2,1)+' σ</b></span>'}).join('')+'<span><small>Total</small><b>'+num(pool.z.total,2,1)+' σ</b></span></div>'+
         '<h3 class="adv-sub">Top 5 bans <small>survole un ban pour le détail</small></h3><div class="adv-bans">'+bansBox(ptitle(pool,sel)+(pool.detected?' (pas un conseil)':''),pool.champs,pool.bans)+'</div>'+
         '<div class="cbody adv-graph"><div class="scroll">'+graph(pool)+'</div></div>'+
+        '<h3 class="adv-sub">Synergies du pool <small>Δ2 avec les alliés du poste choisi, triés par couverture</small></h3>'+
+        '<div class="bar syn-bar">'+synLanes.map(l=>'<button type="button" data-syn="'+l+'" class="'+(l===synLane?'on':'')+'">avec '+LANE_FR[l]+'</button>').join('')+'</div>'+
+        '<div class="cbody adv-graph"><div class="scroll syn-host"></div></div>'+
         '<h3 class="adv-sub">Qui jouer en priorité <small>pour chaque champion adverse en '+roleName(role)+', trié par pick rate</small></h3>'+
         '<div class="cbody adv-graph"><div class="scroll">'+pickGuide(pool)+'</div></div>'+
         '<h3 class="adv-sub">Courbes de scaling <small>winrate selon la durée de partie, dernier patch · clique un champion pour le mettre en avant</small></h3>'+
@@ -661,6 +669,11 @@ function adviceBlock(host,D,p,role){
         'Graphe : adversaires de lane triés par couverture (moyenne des '+X+' meilleures réponses du pool), Δ2 en points de winrate ; encadrés en orange, les adversaires mal couverts ; « — » = même champion, impossible en draft. Main = champion du pool le mieux maîtrisé. '+
         'Bans (adversaires de la même lane) : d’abord jusqu’à 3 counters du blind pick (Δ2 ≤ −1 pt contre lui, classés par pick rate × Δ2), puis les counters globaux (pick rate × couverture négative du pool) ; « Actuel » = pool détecté (champion pool classique ci-dessus), montré pour comparaison, pas comme un conseil.</p></section>';
       fillScaling(host.querySelector('.sc-host'),pool);
+      const fillSyn=()=>{const T=RD.syn&&RD.syn[synLane];
+        host.querySelector('.syn-host').innerHTML=T?graph(pool,T,true):'<p class="legend">Synergies indisponibles : relance python pool_advice.py puis redémarre python serve.py.</p>';
+        host.querySelectorAll('[data-syn]').forEach(b=>b.classList.toggle('on',b.dataset.syn===synLane))};
+      fillSyn();
+      host.querySelectorAll('[data-syn]').forEach(b=>b.onclick=()=>{synLane=b.dataset.syn;fillSyn()});
       host.querySelectorAll('.adv-pick button').forEach(b=>b.onclick=()=>{sel=+b.dataset.i;draw()});
       // complétion (image + nom, filtrée à la frappe) pour chaque ligne ; un clic ou Entrée ajoute le champion
       const label=c=>NAMES[champId(c)]||c;

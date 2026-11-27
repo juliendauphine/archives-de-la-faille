@@ -359,8 +359,17 @@ def advise_pair(player, role, draft_bans=(), locks=None, blind_mode=None):
                  # champions lockés hors méta : pas de données de blindabilité -> absents (affichés « – »)
                  "p_counter": {c: round(float(R.pcount[i]), 4) for i, c in enumerate(R.univ)
                                if c in ctx["B"]["roles"][R.lane]},
+                 "syn": syn_export(R, shown),
                  "lockable": lockable(ctx["MATCHUP_D2"], role)},
     }
+
+
+def syn_export(R, champs):
+    """Synergies Δ2 (rétrécies, comme pour le score) des champions `champs` avec les alliés de chaque autre lane."""
+    rnd = lambda v: None if not np.isfinite(v) else round(float(v), 2)
+    return {b["lane"]: {"opps": b["opps"], "pr": [round(R.pick[b["lane"]][o], 3) for o in b["opps"]],
+                        "d2": {c: [rnd(v) for v in b["M"][R.idx[c]]] for c in champs if c in R.idx}}
+            for b in R.blocks["syn"]}
 
 
 def lockable(MATCHUP_D2, role):
@@ -404,6 +413,7 @@ def main():
             "pr": [round(R.pick[R.lane][o], 3) for o in lane_b["opps"]],
             "d2": {c: [None if not np.isfinite(v) else round(float(v), 2) for v in lane_b["M"][i]] for i, c in enumerate(R.univ)},
             "p_counter": {c: round(float(R.pcount[i]), 4) for i, c in enumerate(R.univ)},
+            "syn": syn_export(R, R.univ),
             # champions lockables à la main : tous ceux des matrices Δ2 du rôle (méta ou non) ; jamais candidats sans lock
             "lockable": lockable(MATCHUP_D2, role),
         }
