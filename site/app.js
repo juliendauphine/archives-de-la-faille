@@ -450,6 +450,8 @@ function championPool(D,p,role){
 // ---------- champion pool conseillé (percentiles/data/pool_advice.json, généré par python pool_advice.py) ----------
 let ADVICE;
 const getAdvice=()=>ADVICE??=fetch('pool_advice.json').then(r=>r.ok?r.json():null).catch(()=>null);
+// courbes de scaling (winrate par durée de partie, dernier patch lolalytics) de tous les champions d'une lane
+const SCAL={};const getScaling=l=>SCAL[l]??=fetch('champion_api?scaling='+l).then(r=>r.ok?r.json():null).catch(()=>null);
 const LANE_FR={top:'Top',jungle:'Jungle',middle:'Mid',bottom:'ADC',support:'Support'};
 const ATERM={lane:'Matchup lane',out:'Matchups hors lane',syn:'Synergie globale',util:'Couverture synergies',mastery:'Maîtrise'};
 // échelle divergente orange -> blanc -> vert
@@ -580,6 +582,52 @@ function adviceBlock(host,D,p,role){
       });
       return s+'</svg>';
     };
+    // scaling : winrate par durée de partie de chaque champion du pool, face à la moyenne du rôle
+    const SCOL=['--sc1','--sc2','--sc3','--sc4','--sc5','--sc6'];
+    const scaling=(pool,S)=>{
+      if(!S||!S.role||!S.role.length)return '<p class="legend">Courbes de scaling indisponibles (données du patch absentes ou serveur à redémarrer).</p>';
+      const B=S.role.map(b=>b.game_length),RA=S.role.map(b=>b.winrate);
+      const ser=pool.champs.map((c,k)=>({c,col:'var('+SCOL[k%SCOL.length]+')',v:S.champs[c]?B.map(g=>(S.champs[c].find(x=>x.game_length===g)||{}).winrate??null):null})).filter(o=>o.v);
+      if(!ser.length)return '<p class="legend">Aucun champion du pool dans les données du patch '+esc(S.patch||'')+'.</p>';
+      // indice de scaling : winrate des parties ≥ 30 min − winrate 15-25 min (0-15 exclu : remakes et FF)
+      const avg=(v,ks)=>{const a=ks.map(i=>v[i]).filter(x=>x!=null);return a.length?a.reduce((x,y)=>x+y,0)/a.length:null};
+      const early=B.map((g,i)=>/^(15|20)-/.test(g)?i:-1).filter(i=>i>=0),late=B.map((g,i)=>/^(30|35)-|\+$/.test(g)?i:-1).filter(i=>i>=0);
+      ser.forEach(o=>{const e=avg(o.v,early),l=avg(o.v,late);o.slope=e==null||l==null?null:l-e});
+      const vals=[...RA,...ser.flatMap(o=>o.v)].filter(v=>v!=null);
+      const lo=Math.floor(Math.min(...vals)-1),hi=Math.ceil(Math.max(...vals)+1);
+      const W=880,H=330,l=50,r=190,t=18,b=46,pw=W-l-r,cw=pw/B.length,X=i=>l+(i+.5)*cw,Y=v=>t+(hi-v)/(hi-lo)*(H-t-b),f=v=>v.toFixed(1);
+      let s='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" class="adv-svg sc-svg" role="img" aria-label="Winrate selon la durée de partie des champions du pool">';
+      const step=hi-lo>12?4:hi-lo>6?2:1;
+      for(let v=Math.ceil(lo/step)*step;v<=hi;v+=step)s+='<line x1="'+l+'" x2="'+(l+pw)+'" y1="'+f(Y(v))+'" y2="'+f(Y(v))+'" class="'+(v===50?'sc0':'scg')+'"/><text x="'+(l-8)+'" y="'+f(Y(v)+4)+'" text-anchor="end" class="al">'+v+' %</text>';
+      B.forEach((g,i)=>s+='<text x="'+f(X(i))+'" y="'+(H-b+20)+'" text-anchor="middle" class="al">'+esc(g)+'</text>');
+      s+='<text x="'+(l+pw/2)+'" y="'+(H-6)+'" text-anchor="middle" class="al">durée de partie (min)</text>';
+      const pts=v=>v.map((y,i)=>y==null?null:f(X(i))+','+f(Y(y))).filter(Boolean).join(' ');
+      s+='<polyline points="'+pts(RA)+'" class="scr"/>';
+      ser.forEach(o=>{s+='<g class="scs" data-c="'+esc(o.c)+'"><polyline points="'+pts(o.v)+'" style="stroke:'+o.col+'" class="scl"/>'+
+        o.v.map((y,i)=>y==null?'':'<circle cx="'+f(X(i))+'" cy="'+f(Y(y))+'" r="4" style="fill:'+o.col+'" class="scp"/>').join('')+'</g>'});
+      // étiquettes de fin de ligne (icône + nom), écartées verticalement pour ne pas se chevaucher
+      const lab=[...ser.map(o=>({o,y:Y(o.v[o.v.length-1]??RA[RA.length-1])})),{o:null,y:Y(RA[RA.length-1])}].sort((a,b)=>a.y-b.y),gap=24;
+      lab.forEach((a,i)=>{a.ly=Math.max(a.y,i?lab[i-1].ly+gap:t+8)});
+      for(let i=lab.length-1;i>=0;i--)lab[i].ly=Math.min(lab[i].ly,i<lab.length-1?lab[i+1].ly-gap:H-b-4);
+      const xe=X(B.length-1),xl=l+pw+14;
+      lab.forEach(a=>{s+='<line x1="'+f(xe+6)+'" y1="'+f(a.y)+'" x2="'+(xl-4)+'" y2="'+f(a.ly)+'" class="scc"/>';
+        s+=a.o?'<g class="scs" data-c="'+esc(a.o.c)+'">'+icon(a.o.c,xl,f(a.ly-10),20)+'<text x="'+(xl+26)+'" y="'+f(a.ly+5)+'" class="an">'+nm(a.o.c)+'</text></g>'
+          :'<text x="'+xl+'" y="'+f(a.ly+5)+'" class="al">moy. '+roleName(role)+'</text>'});
+      // survol : une colonne par tranche de durée, avec toutes les valeurs
+      B.forEach((g,i)=>{s+='<rect x="'+f(l+i*cw)+'" y="'+t+'" width="'+f(cw)+'" height="'+(H-t-b)+'" class="sch"><title>'+esc(g)+' min\nmoy. '+roleName(role)+' : '+num(RA[i],2)+' %'+
+        ser.map(o=>'\n'+(NAMES[champId(o.c)]||o.c)+' : '+(o.v[i]==null?'–':num(o.v[i],2)+' % ('+num(o.v[i]-RA[i],1,1)+')')).join('')+'</title></rect>'});
+      s+='</svg>';
+      const lg='<div class="sc-leg">'+ser.map(o=>'<button type="button" data-c="'+esc(o.c)+'" title="Mettre en avant '+nm(o.c)+'"><i style="background:'+o.col+'"></i>'+img(champId(o.c),20,1)+nm(o.c)+
+        '<small>'+(o.slope==null?'':'scaling <b style="color:'+(o.slope>=1?'var(--win)':o.slope<=-1?'var(--red)':'var(--mute)')+'">'+num(o.slope,1,1)+' pts</b>')+'</small></button>').join('')+
+        '<span class="sc-key"><i></i>moyenne du rôle</span></div>';
+      return s+lg;
+    };
+    const fillScaling=(h,pool)=>{
+      getScaling(BROLE[role]).then(S=>{h.innerHTML=scaling(pool,S);const svg=h.querySelector('.sc-svg');if(!svg)return;
+        h.querySelectorAll('.sc-leg button').forEach(b=>b.onclick=()=>{const on=!b.classList.contains('on');
+          h.querySelectorAll('.sc-leg button').forEach(x=>x.classList.toggle('on',on&&x===b));
+          svg.classList.toggle('focus',on);svg.querySelectorAll('.scs').forEach(g=>g.classList.toggle('on',on&&g.dataset.c===b.dataset.c))})});
+    };
     const draw=()=>{
       const PL=LIST();if(!PL[sel])sel=sel0();
       const pool=PL[sel];
@@ -606,10 +654,13 @@ function adviceBlock(host,D,p,role){
         '<div class="cbody adv-graph"><div class="scroll">'+graph(pool)+'</div></div>'+
         '<h3 class="adv-sub">Qui jouer en priorité <small>pour chaque champion adverse en '+roleName(role)+', trié par pick rate</small></h3>'+
         '<div class="cbody adv-graph"><div class="scroll">'+pickGuide(pool)+'</div></div>'+
+        '<h3 class="adv-sub">Courbes de scaling <small>winrate selon la durée de partie, dernier patch · clique un champion pour le mettre en avant</small></h3>'+
+        '<div class="cbody adv-graph"><div class="scroll sc-host"><p class="legend">Chargement…</p></div></div>'+
         '<p class="legend">Pool calculé sur les données méta (matchups et synergies Δ2) autour des champions obligatoires de '+esc(p.split('#')[0])+' (★ : '+(P.must.map(m=>nm(m.c)+' – '+esc(m.reason)).join(', ')||'aucun')+'). '+
         'Chaque terme est exprimé en écarts-types par rapport à des pools aléatoires ; il faut au moins un blind correct (chance d’être contré &lt; '+num(100*A.params.blind_max_p)+' %). '+
         'Graphe : adversaires de lane triés par couverture (moyenne des '+X+' meilleures réponses du pool), Δ2 en points de winrate ; encadrés en orange, les adversaires mal couverts ; « — » = même champion, impossible en draft. Main = champion du pool le mieux maîtrisé. '+
         'Bans (adversaires de la même lane) : d’abord jusqu’à 3 counters du blind pick (Δ2 ≤ −1 pt contre lui, classés par pick rate × Δ2), puis les counters globaux (pick rate × couverture négative du pool) ; « Actuel » = pool détecté (champion pool classique ci-dessus), montré pour comparaison, pas comme un conseil.</p></section>';
+      fillScaling(host.querySelector('.sc-host'),pool);
       host.querySelectorAll('.adv-pick button').forEach(b=>b.onclick=()=>{sel=+b.dataset.i;draw()});
       // complétion (image + nom, filtrée à la frappe) pour chaque ligne ; un clic ou Entrée ajoute le champion
       const label=c=>NAMES[champId(c)]||c;

@@ -134,6 +134,16 @@ def champion_list():
     return {"patch": st["patch_name"], "roles": roles}
 
 
+def scaling(role):
+    """Courbes de scaling du rôle (winrate par durée de partie) : tous les champions + moyenne du rôle."""
+    st = _state()
+    if role not in LANES:
+        raise ValueError("rôle inconnu : " + str(role))
+    lane = (st["patch"] or {}).get(role, {})
+    return {"patch": st["patch_name"], "role": _role_wr_length(lane),
+            "champs": {c: v["WR_vs_length"] for c, v in lane.items() if v.get("WR_vs_length")}}
+
+
 def champion(champ, role):
     st = _state()
     if role not in LANES:

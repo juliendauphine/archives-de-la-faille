@@ -49,13 +49,15 @@ def _advice_api(query):
 
 
 def _champion_api(query):
-    """GET /champion_api?c=<champion>&r=<lane> : données de la page champion ; sans c : liste des champions par rôle."""
+    """GET /champion_api?c=<champion>&r=<lane> : données de la page champion ; sans c : liste des champions par rôle ;
+    ?scaling=<lane> : winrate par durée de partie de tous les champions du rôle."""
     from urllib.parse import parse_qs
     import champion_meta
     q = parse_qs(query or "")
-    champ, role = q.get("c", [""])[0], q.get("r", [""])[0]
+    champ, role, sc = q.get("c", [""])[0], q.get("r", [""])[0], q.get("scaling", [""])[0]
     try:
-        body = champion_meta.champion(champ, role or "top") if champ else champion_meta.champion_list()
+        body = (champion_meta.scaling(sc) if sc else
+                champion_meta.champion(champ, role or "top") if champ else champion_meta.champion_list())
         return "200 OK", json.dumps(body, ensure_ascii=False).encode("utf-8")
     except Exception as e:
         return "400 Bad Request", json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
