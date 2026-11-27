@@ -22,14 +22,14 @@ const heat=vals=>{
     :'background:color-mix(in srgb,color-mix(in srgb,var(--blue) '+Math.round((v-mn)/(mx-mn)*100)+'%,var(--red)) 32%,transparent)'};
 
 document.body.insertAdjacentHTML('afterbegin','<header><b>Archives de la Faille</b><nav style="display:flex;gap:18px">'+
-[['index.html','Historique','h'],['players.html','Joueurs','p'],['champions.html','Champions','c'],['adversaires.html','Adversaires','a'],['records.html','Records','r']]
+[['index.html','Historique','h'],['players.html','Joueurs','p'],['champions.html','Champions','c'],['champion.html','Fiche champion','m'],['adversaires.html','Adversaires','a'],['records.html','Records','r']]
 .map(x=>'<a href="'+x[0]+'" class="'+((document.body.dataset.page==='j'?'p':document.body.dataset.page)===x[2]?'on':'')+'">'+x[1]+'</a>').join('')+'</nav></header>');
 
 Promise.all([
   fetch('data.json').then(r=>{if(!r.ok)throw 0;return r.json()}),
   fetch('https://ddragon.leagueoflegends.com/api/versions.json').then(r=>r.json()).then(v=>v[0]).catch(()=>null),
   fetch('benchmarks.json').then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(async([D,v,B])=>{BENCH=fixBench(B||{});if(v){VER=v;try{const j=await(await fetch('https://ddragon.leagueoflegends.com/cdn/'+v+'/data/en_US/champion.json')).json();for(const k in j.data)NAMES[k]=j.data[k].name}catch(_){}}D.roles=D.roles||{};D.rows=D.rows.filter(r=>{const R=D.roles[r.p];return !R||!R.length||R.includes(r.pos)});({j:player,a:opponents,h:history,p:players,c:champions,r:records})[document.body.dataset.page](D)})
+]).then(async([D,v,B])=>{BENCH=fixBench(B||{});if(v){VER=v;try{const j=await(await fetch('https://ddragon.leagueoflegends.com/cdn/'+v+'/data/en_US/champion.json')).json();for(const k in j.data)NAMES[k]=j.data[k].name}catch(_){}}D.roles=D.roles||{};D.rows=D.rows.filter(r=>{const R=D.roles[r.p];return !R||!R.length||R.includes(r.pos)});({j:player,a:opponents,h:historyPage,p:players,c:champions,r:records,m:metaChampion})[document.body.dataset.page](D)})
 .catch(e=>{console.error(e);app.innerHTML='<p class="empty">Impossible de charger les données. Lance <code>python serve.py</code> puis ouvre http://localhost:8000</p>'});
 
 function summ(R){
@@ -129,7 +129,7 @@ const draftUrl=g=>{
   return 'https://team-draft.onrender.com/?draft='+encodeURIComponent(JSON.stringify({version:1,team1:side(100),team2:side(200)}))};
 const dpmUrl=(g,t)=>{const p=pick(g,t);return p?'https://dpm.lol/'+encodeURIComponent(p.name)+'-'+encodeURIComponent(p.tag)+'?match='+g.id.split('_').pop():null};
 const won=(g,sel)=>g.players.find(p=>p.team===ours(g,sel)).win;
-function history(D){
+function historyPage(D){  // pas « history » : masquerait window.history
   let sel='';
   const mine=p=>p.tr&&(!sel||(p.name+'#'+p.tag).toLowerCase()===sel.toLowerCase());
   const chip=(t,G)=>{
@@ -400,6 +400,10 @@ function player(D){
   blindChart($('#blind'),D,p,role);
 }
 
+// lien vers la fiche champion (champion.html) ; role = clé Riot (TOP…UTILITY) ou lane (top…support)
+const champHref=(c,role)=>'champion.html?c='+encodeURIComponent(c)+'&r='+encodeURIComponent(BROLE[role]||role);
+const champLink=(c,role,label)=>'<a class="cplink" href="'+champHref(c,role)+'" title="Fiche de '+esc(NAMES[champId(c)]||c)+'">'+label+'</a>';
+
 // ---------- champion pool (méthode B) ----------
 // Score = ln(1+n) × (wr_liss / 0.5)^α × Perf, sur toutes les parties du rôle (dossier + SoloQ + Flex de la saison)
 // wr_liss = (w + 0.5·m) / (n + m) ; Perf = clip(1 + β·z_perf, 0.85, 1.15), z_perf = écart à la moyenne du joueur sur ce rôle
@@ -432,7 +436,7 @@ function championPool(D,p,role){
   return '<section class="pool"><h2>Champion pool en '+roleName(role)+' <small>'+G.length+' parties · dossier + SoloQ + Flex de la saison</small></h2>'+
     '<div class="pool-grid">'+top.map((o,i)=>'<article class="cp'+(i===0?' main':'')+'">'+
       '<div class="cp-art" style="background-image:url(\'https://ddragon.leagueoflegends.com/cdn/img/champion/loading/'+encodeURIComponent(champId(o.c))+'_0.jpg\')"><span class="cp-rank">#'+(i+1)+'</span>'+(i===0?'<span class="cp-tag">Main</span>':'')+'</div>'+
-      '<div class="cp-body"><h3>'+esc(NAMES[o.c]||o.c)+'</h3>'+
+      '<div class="cp-body"><h3>'+champLink(o.c,role,esc(NAMES[o.c]||o.c))+'</h3>'+
       '<div class="cp-stats">'+
         '<div><b>'+o.n+'</b><small>parties · '+share(o)+' % du rôle</small></div>'+
         '<div class="cp-wr">'+ring(o.wr)+'<span><b style="color:'+wrc(o.wr)+'">'+num(o.wr)+' %</b><small>'+o.w+' V · '+(o.n-o.w)+' D</small></span></div>'+
@@ -482,7 +486,7 @@ function adviceBlock(host,D,p,role){
         '<div class="cp-art" style="background-image:url(\'https://ddragon.leagueoflegends.com/cdn/img/champion/loading/'+encodeURIComponent(champId(c))+'_0.jpg\')">'+
         (must[c]?'<span class="cp-rank" title="Obligatoire ('+esc(must[c])+')">★</span>':'')+
         '<span class="cp-tags">'+(isMain?'<span class="cp-tag">Main</span>':'')+(isBlind?'<span class="cp-tag blind">Blind pick</span>':'')+'</span></div>'+
-        '<div class="cp-body"><h3>'+nm(c)+'</h3><div class="cp-stats">'+
+        '<div class="cp-body"><h3>'+champLink(c,role,nm(c))+'</h3><div class="cp-stats">'+
         (o?'<div><b>'+o.n+'</b><small>parties en '+roleName(role)+'</small></div>'+
            '<div><b style="color:'+wrc(100*o.w/o.n)+'">'+num(100*o.w/o.n)+' %</b><small>'+o.w+' V · '+(o.n-o.w)+' D · '+num((o.k+o.a)/Math.max(1,o.d),2)+' KDA</small></div>'
           :'<div><b class="cp-new">À apprendre</b><small>jamais joué en '+roleName(role)+'</small></div>')+
@@ -534,7 +538,7 @@ function adviceBlock(host,D,p,role){
     const bansBox=(title,champs,B)=>'<div class="adv-ban"><div class="adv-ban-h"><b>'+title+'</b><span>'+champs.map(c=>img(champId(c),20,1)).join('')+'</span></div>'+
       (B&&B.list&&B.list.length?'<small class="adv-ban-b">Blind : '+nm(B.blind)+' '+num(100*(RD.p_counter[B.blind]??1))+' %'+((RD.p_counter[B.blind]??1)>=A.params.blind_max_p?' · aucun vrai blind dans ce pool, c’est son champion le moins contrable':'')+'</small><ol>'+B.list.map(b=>{const [lab,cls]=BREASON[b.reason];
         return '<li tabindex="0" class="'+((b.reason==='global'&&b.t_global<=0)?'low':'')+'">'+img(champId(b.c),38,1)+
-        '<span><b>'+nm(b.c)+' <em class="rs '+cls+'">'+lab+'</em></b><small>'+num(b.pr,1)+' % pick · '+(b.reason==='global'?'couverture <span style="color:'+(b.cover<0?'var(--red)':'var(--win)')+'">'+num(b.cover,1,1)+' pts</span>':'vs '+nm(B.blind)+' <span style="color:var(--red)">'+num(b.blind_d2,1,1)+' pts</span>')+'</small></span>'+banTip(b,B.blind)+'</li>'}).join('')+'</ol>'
+        '<span><b>'+champLink(b.c,role,nm(b.c))+' <em class="rs '+cls+'">'+lab+'</em></b><small>'+num(b.pr,1)+' % pick · '+(b.reason==='global'?'couverture <span style="color:'+(b.cover<0?'var(--red)':'var(--win)')+'">'+num(b.cover,1,1)+' pts</span>':'vs '+nm(B.blind)+' <span style="color:var(--red)">'+num(b.blind_d2,1,1)+' pts</span>')+'</small></span>'+banTip(b,B.blind)+'</li>'}).join('')+'</ol>'
         :'<p class="legend">Pas de champion pool actuel (aucun champion joué au moins '+POOL.min+' fois).</p>')+'</div>';
     // qui jouer : pour chaque adversaire de lane (trié par pick rate), les champions du pool placés selon leur Δ2 ; le n°1 est la réponse prioritaire
     const pickGuide=pool=>{
@@ -550,7 +554,7 @@ function adviceBlock(host,D,p,role){
       opps.forEach(({o,j,pr},r)=>{
         const y=top+r*rh,cy=y+rh/2;
         if(r%2)s+='<rect x="0" y="'+y+'" width="'+W+'" height="'+rh+'" class="pgz"/>';
-        s+=icon(o,8,cy-ic/2,ic)+'<text x="'+(8+ic+8)+'" y="'+(cy-1)+'" class="ar">'+esc(o)+'</text><text x="'+(8+ic+8)+'" y="'+(cy+13)+'" class="al">'+num(pr,1)+' % pick</text>';
+        s+=icon(o,8,cy-ic/2,ic)+'<text x="'+(8+ic+8)+'" y="'+(cy-1)+'" class="ar"><a href="'+champHref(o,role)+'" class="cplink">'+esc(o)+'</a></text><text x="'+(8+ic+8)+'" y="'+(cy+13)+'" class="al">'+num(pr,1)+' % pick</text>';
         const pts=champs.map(c=>({c,v:RD.d2[c][j]})).filter(p=>p.v!=null).sort((a,b)=>b.v-a.v);
         if(!pts.length)return;
         // icônes : du pire au meilleur pour que le n°1 soit dessiné au-dessus ; décalage vertical si elles se chevauchent
@@ -560,7 +564,7 @@ function adviceBlock(host,D,p,role){
           s+='<g class="'+(best?'pgb':'pgo')+'">'+(best?'<rect x="'+(p.x-sz/2-2)+'" y="'+(cy+p.dy-sz/2-2)+'" width="'+(sz+4)+'" height="'+(sz+4)+'" rx="5" class="pgr" style="stroke:'+(p.v>=0?'var(--gold)':'#e67e22')+'"/>':'')+
             icon(p.c,p.x-sz/2,cy+p.dy-sz/2,sz).replace('</title>',' : '+num(p.v,1,1)+' pts contre '+esc(o)+'</title>')+'</g>'});
         const b=pos[0],b2=pos[1];
-        s+=icon(b.c,L+AW+16,cy-ic/2,ic)+'<text x="'+(L+AW+16+ic+8)+'" y="'+(cy-1)+'" class="ar">'+nm(b.c)+' <tspan style="fill:'+(b.v>=0?'var(--win)':'#e67e22')+';font-weight:700">'+num(b.v,1,1)+'</tspan></text>'+
+        s+=icon(b.c,L+AW+16,cy-ic/2,ic)+'<text x="'+(L+AW+16+ic+8)+'" y="'+(cy-1)+'" class="ar"><a href="'+champHref(b.c,role)+'" class="cplink">'+nm(b.c)+'</a> <tspan style="fill:'+(b.v>=0?'var(--win)':'#e67e22')+';font-weight:700">'+num(b.v,1,1)+'</tspan></text>'+
           '<text x="'+(L+AW+16+ic+8)+'" y="'+(cy+13)+'" class="al">'+(b.v<0?'aucune bonne réponse':b2?'puis '+nm(b2.c)+' '+num(b2.v,1,1):'')+'</text>';
       });
       return s+'</svg>';
@@ -909,3 +913,201 @@ function scatterRender(p,role){
     draw();
   };
 }
+
+// ---------- fiche champion (méta : /champion_api, champion_meta.py) ----------
+// Winrate et true winrate du dernier patch lolalytics, blindabilité, Δ2 multi-patchs des matchups et synergies.
+const MLANES=['top','jungle','middle','bottom','support'];
+const META_PR=.5;   // pick rate minimum (%) d'un adversaire / allié pour le filtre « méta »
+const mApi=q=>fetch('champion_api?'+q).then(async r=>{
+  if(r.status===404)throw new Error('le serveur ne connaît pas /champion_api : redémarre python serve.py');
+  const j=await r.json().catch(()=>({error:'réponse invalide ('+r.status+')'}));if(!r.ok||j.error)throw new Error(j.error||r.status);return j});
+function metaChampion(){
+  const q=new URLSearchParams(location.search);
+  let LIST=null,C=null,champ=q.get('c')||'',role=MLANES.includes(q.get('r'))?q.get('r'):'',kind='matchups',lane=null,metaOnly=true,sk='d2',sdir=1;
+  const nm=c=>esc(NAMES[champId(c)]||c),ic=(c,s)=>img(champId(c),s,1);
+  const link=(c,l)=>'champion.html?c='+encodeURIComponent(c)+'&r='+l;
+  const pct=(v,d=1)=>v==null?'–':num(v,d)+' %';
+  const d2c=v=>v<=-2?'var(--red)':v<0?'#e67e22':v<2?'var(--blue)':'var(--win)';
+  const fail=e=>{app.innerHTML='<h1>Fiche champion</h1><p class="empty">Impossible de charger les données : '+esc(e.message||e)+'</p>'};
+  const defLane=k=>k==='matchups'?C.role:C.role==='support'?'bottom':C.role==='bottom'?'support':C.role==='jungle'?'middle':'jungle';
+  const load=(c,r)=>mApi('c='+encodeURIComponent(c)+'&r='+r).then(d=>{
+    C=d;champ=d.champ;role=d.role;lane=defLane(kind);
+    history.replaceState(null,'',link(champ,role));document.title=(NAMES[champId(champ)]||champ)+' – Fiche champion';draw();
+  }).catch(fail);
+  mApi('').then(L=>{LIST=L;
+    if(!role)role='middle';
+    if(!champ)champ=(L.roles[role].find(o=>o.d2)||L.roles[role][0]||{}).c||'';
+    load(champ,role)}).catch(fail);
+
+  // ---------- blocs ----------
+  const tile=(t,v,sub,col)=>'<div class="st"><small>'+t+'</small><b'+(col?' style="color:'+col+'"':'')+'>'+v+'</b><small>'+sub+'</small></div>';
+  const hero=()=>{
+    const P=C.patch,B=C.blind,tier=P?.tier_wr;
+    const wrCol=v=>v==null||tier==null?'':v>=tier+1?'var(--win)':v<=tier-1?'var(--red)':'';
+    const pc=B?.p_counter_matchups_synergies,pm=B?.p_counter_matchups;
+    const bcol=v=>v==null?'':v<.3?'var(--win)':v<.5?'var(--gold)':'var(--red)';
+    const btier=v=>v==null?'':v<.3?'très bon blind':v<.5?'blind correct':'contre-pick';
+    return '<section class="hero mhero"><div class="pic">'+ic(champ,112)+'</div><div class="hi"><div class="meta"><b>'+lname(role)+'</b>'+
+      (P?'<span>Patch '+esc(P.patch)+'</span>'+(P.note?'<span>Tier '+esc(P.note)+'</span>':'')+(P.role_rank?'<span>Rang '+esc(P.role_rank)+'</span>':''):'<span>Pas de données de patch</span>')+'</div>'+
+      '<h1>'+nm(champ)+'</h1>'+
+      (C.roles.length>1?'<p>Aussi joué : '+C.roles.filter(l=>l!==role).map(l=>'<a class="ext" href="'+link(champ,l)+'" data-go="'+l+'">'+lname(l)+'</a>').join(' · ')+'</p>':'')+'</div>'+
+      '<div class="stats">'+
+      tile('Winrate',pct(P?.wr,2),P?num(P.games)+' parties · moy. '+pct(tier,2):'patch indisponible',wrCol(P?.wr))+
+      tile('True winrate',pct(P?.true_wr,2),P?'ajusté · '+num(P.true_wr-P.wr,2,1)+' pts vs brut':'patch indisponible',wrCol(P?.true_wr))+
+      tile('Pick / ban',P?num(P.pr,1)+' %':'–',P?'ban '+pct(P.br):'')+
+      tile('Blindabilité',pc==null?'–':num(100*pc)+' %',pc==null?'hors méta (blindability)':btier(pc)+' · '+B.rank_matchups_synergies+'e / '+B.n_role,bcol(pc))+
+      tile('Sans synergies',pm==null?'–':num(100*pm)+' %',pm==null?'':btier(pm)+' · '+B.rank_matchups+'e / '+B.n_role,bcol(pm))+
+      '</div></section>';
+  };
+  const biasBox=()=>{
+    const P=C.patch;if(!P)return '<p class="legend">Aucune donnée pour '+nm(champ)+' en '+lname(role)+' dans le fichier lolalytics du dernier patch : winrate et true winrate indisponibles.</p>';
+    const chips=[...MLANES.map(l=>['vs '+lname(l),P.bias.matchups[l]]),...MLANES.filter(l=>l!==role).map(l=>['avec '+lname(l),P.bias.synergies[l]])];
+    return '<details class="dtl mbias"><summary>Du winrate au true winrate : biais de sélection retirés ('+num(P.wr-P.true_wr,2,1)+' pts au total)</summary><div class="adv-terms">'+
+      chips.map(([t,v])=>'<span><small>'+t+'</small><b style="color:'+(v>.05?'var(--red)':v<-.05?'var(--win)':'var(--mute)')+'">'+num(v,2,1)+'</b></span>').join('')+'</div>'+
+      '<p class="legend">Biais d’un rôle = winrate brut − winrate repondéré par les pick rates du patch dans ce rôle. Positif : '+nm(champ)+' est plus souvent pris face à (ou avec) des champions qui l’arrangent qu’au hasard du méta. True winrate = brut − somme des biais.</p></details>';
+  };
+  const rows=k=>MLANES.flatMap(l=>(C[k][l]||[]).map(r=>({l,o:r[0],d:r[1],ci:r[2],pr:r[3],wr:r[4],g:r[5]})));
+  const keep=r=>!metaOnly||(r.pr!=null&&r.pr>=META_PR);
+  const topBox=(title,k,sign)=>{
+    const L=rows(k).filter(keep).sort((a,b)=>sign*(a.d-b.d)).slice(0,5);
+    return '<div class="adv-ban mtop"><div class="adv-ban-h"><b>'+title+'</b><small>'+(k==='matchups'?'tous rôles adverses':'tous rôles alliés')+'</small></div>'+
+      (L.length?'<ol>'+L.map(r=>'<li>'+ic(r.o,38)+'<span><b><a class="pl" href="'+link(r.o,r.l)+'">'+nm(r.o)+'</a> <em class="rs mlane">'+lname(r.l)+'</em></b><small>'+
+        (r.pr==null?'hors patch':num(r.pr,1)+' % pick')+(r.wr!=null?' · '+num(r.wr,1)+' % sur '+num(r.g)+' parties (patch)':'')+'</small></span><b class="mval" style="color:'+d2c(r.d)+'">'+num(r.d,1,1)+'<small>±'+num(r.ci,1)+'</small></b></li>').join('')+'</ol>'
+        :'<p class="legend">Aucune donnée.</p>')+'</div>';
+  };
+  // nuage : icônes placées selon le Δ2, empilées sans chevauchement
+  const strip=L=>{
+    if(!L.length)return '<p class="empty">Aucun champion pour ce filtre.</p>';
+    const abs=L.map(r=>Math.abs(r.d)).sort((a,b)=>a-b),lim=Math.max(4,Math.ceil(abs[Math.floor(.97*(abs.length-1))]));
+    const W=960,pl=24,pr_=24,X=v=>pl+(Math.max(-lim,Math.min(lim,v))+lim)/(2*lim)*(W-pl-pr_);
+    let d=34,off;for(;;){off=beeswarm(L.map(r=>X(r.d)),d*1.04);if(Math.max(...off.map(Math.abs))+d/2<=150||d<16)break;d*=.9}
+    const half=Math.max(...off.map(Math.abs))+d/2+6,top=34,mid=top+half,H=mid+half+34,f=v=>v.toFixed(1);
+    const w=L.reduce((a,r)=>a+(r.pr||0),0),mean=w?L.reduce((a,r)=>a+r.d*(r.pr||0),0)/w:null,thr=C.blind?.params?.counter_threshold??-2;
+    let s='<svg viewBox="0 0 '+W+' '+H+'" class="mstrip" role="img" aria-label="Δ2 de '+nm(champ)+' '+(kind==='matchups'?'face aux':'avec les')+' '+lname(lane)+'">'+
+      '<defs><clipPath id="mclip" clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5"/></clipPath></defs>'+
+      '<rect x="'+pl+'" y="'+(top-6)+'" width="'+f(X(thr)-pl)+'" height="'+f(2*half+12)+'" class="mbad"/>';
+    for(let t=-lim;t<=lim;t++){const x=X(t);s+='<line x1="'+f(x)+'" x2="'+f(x)+'" y1="'+(top-6)+'" y2="'+f(H-28)+'" class="'+(t?'mg':'m0')+'"/>'+
+      (t%(lim>6?2:1)===0?'<text x="'+f(x)+'" y="'+f(H-10)+'" text-anchor="middle" class="ml">'+(t>0?'+':t<0?'−':'')+Math.abs(t)+'</text>':'')}
+    s+='<text x="'+f(X(thr))+'" y="'+(top-12)+'" text-anchor="middle" class="ml mthr">seuil '+num(thr,0,1).replace('-','−')+'</text>';
+    if(mean!=null)s+='<line x1="'+f(X(mean))+'" x2="'+f(X(mean))+'" y1="'+(top-6)+'" y2="'+f(H-28)+'" class="mmean"/><text x="'+f(X(mean))+'" y="16" text-anchor="middle" class="ml mmt">moy. pondérée '+num(mean,2,1)+'</text>';
+    L.forEach((r,i)=>{const x=X(r.d),y=mid+off[i];
+      s+='<a href="'+link(r.o,lane)+'"><g class="mpt"><title>'+nm(r.o)+' : '+num(r.d,2,1)+' ± '+num(r.ci,2)+' pts'+(r.pr!=null?' · '+num(r.pr,1)+' % pick':'')+(r.wr!=null?' · '+num(r.wr,1)+' % ('+num(r.g)+' parties, patch)':'')+'</title>'+
+        '<circle cx="'+f(x)+'" cy="'+f(y)+'" r="'+f(d/2)+'" fill="'+d2c(r.d)+'"/>'+
+        '<image href="https://ddragon.leagueoflegends.com/cdn/'+VER+'/img/champion/'+encodeURIComponent(champId(r.o))+'.png" x="'+f(x-d/2+2.5)+'" y="'+f(y-d/2+2.5)+'" width="'+f(d-5)+'" height="'+f(d-5)+'" clip-path="url(#mclip)"'+(r.pr!=null&&r.pr>=META_PR?'':' opacity=".45"')+'/></g></a>'});
+    return s+'</svg>';
+  };
+  const table=L=>{
+    if(!L.length)return '';
+    const lim=Math.max(...L.map(r=>Math.abs(r.d)+r.ci),1),pos=v=>50+50*Math.max(-1,Math.min(1,v/lim));
+    const S=[...L].sort((a,b)=>sk==='o'?sdir*nm(a.o).localeCompare(nm(b.o)):sdir*((a[sk]??-1e9)-(b[sk]??-1e9)));
+    const th=(k,t)=>'<th class="s'+(k===sk?' cur':'')+'" data-k="'+k+'">'+t+(k===sk?(sdir>0?' ▴':' ▾'):'')+'</th>';
+    return '<div class="scroll"><table class="mtab"><thead><tr>'+th('o',kind==='matchups'?'Adversaire':'Allié')+th('pr','Pick rate')+'<th class="mbarh">Δ2 (pts de winrate, multi-patchs)</th>'+th('d','Δ2')+th('wr','Winrate patch')+'</tr></thead><tbody>'+
+      S.map(r=>{const a=pos(Math.min(0,r.d)),b=pos(Math.max(0,r.d));
+        return '<tr class="'+(r.pr!=null&&r.pr>=META_PR?'':'moff')+'"><td><a class="cell pl" href="'+link(r.o,lane)+'">'+ic(r.o,26)+'<span>'+nm(r.o)+'</span></a></td><td>'+(r.pr==null?'–':num(r.pr,2)+' %')+'</td>'+
+        '<td class="mbarc"><div class="mbar"><i style="left:'+a.toFixed(1)+'%;width:'+(b-a).toFixed(1)+'%;background:'+d2c(r.d)+'"></i><u style="left:'+pos(r.d-r.ci).toFixed(1)+'%;width:'+(pos(r.d+r.ci)-pos(r.d-r.ci)).toFixed(1)+'%"></u></div></td>'+
+        '<td style="color:'+d2c(r.d)+';font-weight:700">'+num(r.d,2,1)+' <small>±'+num(r.ci,2)+'</small></td><td>'+(r.wr==null?'–':num(r.wr,1)+' % <small>'+num(r.g)+'</small>')+'</td></tr>'}).join('')+'</tbody></table></div>';
+  };
+  const explorer=()=>{
+    const lanes=MLANES.filter(l=>kind==='matchups'||l!==role);
+    if(!lanes.includes(lane))lane=defLane(kind);
+    const all=(C[kind][lane]||[]).map(r=>({o:r[0],d:r[1],ci:r[2],pr:r[3],wr:r[4],g:r[5]})),L=all.filter(keep);
+    return '<section class="mexp"><h2>Δ2 '+(kind==='matchups'?'des matchups':'des synergies')+'</h2><div class="bar">'+
+      [['matchups','Matchups'],['synergies','Synergies']].map(([k,t])=>'<button data-kind="'+k+'" class="'+(k===kind?'on':'')+'">'+t+'</button>').join('')+
+      '<span class="msep"></span>'+lanes.map(l=>'<button data-lane="'+l+'" class="'+(l===lane?'on':'')+'">'+(kind==='matchups'?'vs ':'avec ')+lname(l)+'</button>').join('')+
+      '<label class="mchk"><input type="checkbox" id="mmeta"'+(metaOnly?' checked':'')+'> Méta uniquement (pick ≥ '+num(META_PR,1)+' %)</label><span>'+L.length+' / '+all.length+'</span></div>'+
+      '<div class="cbody">'+strip(L)+'</div>'+table(L)+
+      '<p class="legend">Δ2 = winrate réel de la paire − winrate attendu d’après les true winrates des deux champions, moyenné sur les patchs (± = intervalle à 95 %). '+
+      (kind==='matchups'?'À droite : bon matchup pour '+nm(champ)+'. ':'À droite : bonne synergie. ')+'Zone rouge : sous le seuil de counter. Taille du méta : pick rate du patch '+esc(C.patch?.patch||'–')+' (icônes pâles = hors méta). Clic sur un champion : sa fiche.</p></section>';
+  };
+
+  // ---------- profil du patch : stats brutes, winrate par durée, base de joueurs ----------
+  const RAW_FR={'Kills':'Kills','Deaths':'Morts','Assists':'Assists','Max Kill Spree':'Meilleure série','Gold':'Or','Minions Killed':'Sbires tués',
+    'Jungle CS':'CS jungle','Total Damage':'Dégâts totaux','Physical Damage':'Dégâts physiques','Magic Damage':'Dégâts magiques','True Damage':'Dégâts bruts',
+    'Damage Taken':'Dégâts subis','Healing':'Soins'};
+  const rawBox=P=>{
+    const R=P.raw_stats;if(!R)return '';const N=P.raw_n||1;
+    const keys=Object.keys(RAW_FR).filter(k=>R[k]).concat(Object.keys(R).filter(k=>!RAW_FR[k]));
+    return '<div class="mraw">'+keys.map(k=>{const [v,rk]=R[k],p=N>1?100*(N-rk)/(N-1):50;
+      return '<div class="mrs" title="'+esc(k)+' : rang '+rk+' sur '+N+' en '+lname(role)+' (1 = valeur la plus élevée)"><small>'+esc(RAW_FR[k]||k)+'</small><b>'+num(v,v>=100?0:2)+'</b>'+
+        '<span class="mrk"><i style="width:'+p.toFixed(0)+'%"></i></span><small>'+rk+'<sup>e</sup> / '+N+'</small></div>'}).join('')+'</div>';
+  };
+  const lengthBox=P=>{
+    const L=P.wr_length||[];if(!L.length)return '<p class="legend">Pas de winrate par durée de partie.</p>';
+    const RA={};(P.role_wr_length||[]).forEach(b=>RA[b.game_length]=b.winrate);
+    const vals=[...L.map(b=>b.winrate),...Object.values(RA),P.wr].filter(v=>v!=null);
+    const lo=Math.floor(Math.min(...vals)-1),hi=Math.ceil(Math.max(...vals)+1);
+    const W=480,H=250,l=42,r=12,t=16,b=36,X=i=>l+(i+.5)*(W-l-r)/L.length,Y=v=>t+(hi-v)/(hi-lo)*(H-t-b),f=v=>v.toFixed(1);
+    let s='<svg viewBox="0 0 '+W+' '+H+'" class="mlen" role="img" aria-label="Winrate selon la durée de partie">';
+    const step=hi-lo>12?4:hi-lo>6?2:1;
+    for(let v=Math.ceil(lo/step)*step;v<=hi;v+=step)s+='<line x1="'+l+'" x2="'+(W-r)+'" y1="'+f(Y(v))+'" y2="'+f(Y(v))+'" class="'+(v===50?'m0':'mg')+'"/><text x="'+(l-6)+'" y="'+f(Y(v)+4)+'" text-anchor="end" class="ml">'+v+' %</text>';
+    const line=(pts,cls)=>'<polyline points="'+pts.map(([x,y])=>f(x)+','+f(y)).join(' ')+'" class="'+cls+'"/>';
+    const ra=L.map((b,i)=>RA[b.game_length]==null?null:[X(i),Y(RA[b.game_length])]).filter(Boolean);
+    if(ra.length)s+=line(ra,'mlr');
+    s+=line(L.map((b,i)=>[X(i),Y(b.winrate)]),'mlc');
+    L.forEach((b,i)=>{const d=RA[b.game_length];
+      s+='<g><title>'+esc(b.game_length)+' min : '+num(b.winrate,2)+' %'+(d!=null?' (moy. du rôle '+num(d,2)+' %)':'')+'</title><circle cx="'+f(X(i))+'" cy="'+f(Y(b.winrate))+'" r="5" class="mlp" style="fill:'+(d==null?'var(--gold)':b.winrate>=d+1?'var(--win)':b.winrate<=d-1?'var(--red)':'var(--gold)')+'"/>'+
+        '<text x="'+f(X(i))+'" y="'+f(Y(b.winrate)-10)+'" text-anchor="middle" class="mlv">'+num(b.winrate,1)+'</text>'+
+        '<text x="'+f(X(i))+'" y="'+(H-14)+'" text-anchor="middle" class="ml">'+esc(b.game_length)+'</text></g>'});
+    s+='<text x="'+((l+W-r)/2)+'" y="'+(H-1)+'" text-anchor="middle" class="ml">durée de partie (min)</text>';
+    return s+'</svg><p class="legend"><span class="mkey mkc"></span>'+nm(champ)+' <span class="mkey mkr"></span>moyenne du rôle (pondérée par les parties). Point vert / rouge : au moins 1 pt au-dessus / en dessous de la moyenne du rôle.</p>';
+  };
+  const PBQ=(b,d)=>b>=1?(d>=1?['Populaire','beaucoup de joueurs, qui le jouent beaucoup']:['Large','beaucoup de joueurs, qui le jouent peu']):(d>=1?['Niche','peu de joueurs, mais fidèles']:['Impopulaire','peu de joueurs, qui le jouent peu']);
+  const baseBox=P=>{
+    const pb=P.playerbase,A=P.role_playerbase||[];if(!pb||!A.length)return '<p class="legend">Pas de données de base de joueurs.</p>';
+    const bs=A.map(a=>a[1]).concat(pb.breadth),ds=A.map(a=>a[2]).concat(pb.depth),lg=Math.log;
+    const span=(v,m)=>Math.max(Math.abs(lg(Math.min(...v))),Math.abs(lg(Math.max(...v))))*1.1||m;
+    const sb=span(bs,1),sd=span(ds,.3),W=480,H=320,l=14,r=14,t=14,b=30;
+    const X=v=>l+(lg(v)/sb+1)/2*(W-l-r),Y=v=>t+(1-lg(v)/sd)/2*(H-t-b),f=v=>v.toFixed(1);
+    let s='<svg viewBox="0 0 '+W+' '+H+'" class="mpb" role="img" aria-label="Base de joueurs normalisée">';
+    [['Niche',l+8,t+16,'start'],['Populaire',W-r-8,t+16,'end'],['Impopulaire',l+8,H-b-8,'start'],['Large',W-r-8,H-b-8,'end']].forEach(([q,x,y,a])=>
+      s+='<text x="'+x+'" y="'+y+'" text-anchor="'+a+'" class="mq'+(q===PBQ(pb.breadth,pb.depth)[0]?' on':'')+'">'+q+'</text>');
+    s+='<line x1="'+f(X(1))+'" x2="'+f(X(1))+'" y1="'+t+'" y2="'+(H-b)+'" class="m0"/><line x1="'+l+'" x2="'+(W-r)+'" y1="'+f(Y(1))+'" y2="'+f(Y(1))+'" class="m0"/>';
+    A.filter(a=>a[0]!==champ).forEach(a=>s+='<a href="'+link(a[0],role)+'"><circle cx="'+f(X(a[1]))+'" cy="'+f(Y(a[2]))+'" r="'+f(3+Math.sqrt(a[3]||0)*1.6)+'" class="mpo"><title>'+nm(a[0])+' · breadth '+num(a[1],2)+' · depth '+num(a[2],2)+(a[3]!=null?' · '+num(a[3],1)+' % pick':'')+'</title></circle></a>');
+    const x=X(pb.breadth),y=Y(pb.depth),d=34;
+    s+='<circle cx="'+f(x)+'" cy="'+f(y)+'" r="'+(d/2+2)+'" fill="var(--gold)"/><image href="https://ddragon.leagueoflegends.com/cdn/'+VER+'/img/champion/'+encodeURIComponent(champId(champ))+'.png" x="'+f(x-d/2)+'" y="'+f(y-d/2)+'" width="'+d+'" height="'+d+'" clip-path="url(#mpclip)"><title>'+nm(champ)+'</title></image>';
+    s+='<text x="'+((l+W-r)/2)+'" y="'+(H-8)+'" text-anchor="middle" class="ml">breadth (nombre de joueurs) →</text>'+
+      '<text x="'+f(X(1)+6)+'" y="'+(t+36)+'" class="ml">↑ depth (parties par joueur)</text>';
+    return s+'<defs><clipPath id="mpclip" clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".5"/></clipPath></defs></svg>';
+  };
+  const profile=()=>{
+    const P=C.patch;if(!P||!(P.raw_stats||P.wr_length||P.playerbase))return '';
+    const q=P.playerbase?PBQ(P.playerbase.breadth,P.playerbase.depth):null;
+    return '<section class="mprof"><h2>Profil du patch '+esc(P.patch)+' <small>données lolalytics, '+lname(role)+'</small></h2>'+
+      (P.raw_stats?'<h3 class="adv-sub">Stats moyennes par partie <small>barre = position dans le rôle, du plus bas au plus haut</small></h3>'+rawBox(P):'')+
+      '<div class="mcols"><div class="cbody"><h3 class="adv-sub">Winrate selon la durée de partie</h3>'+lengthBox(P)+'</div>'+
+      '<div class="cbody"><h3 class="adv-sub">Base de joueurs normalisée'+(q?' <small>'+q[0]+'</small>':'')+'</h3>'+baseBox(P)+
+      (q?'<p class="legend"><b>'+q[0]+'</b> : '+q[1]+' (breadth '+num(P.playerbase.breadth,2)+' · depth '+num(P.playerbase.depth,2)+'). Breadth = nombre de joueurs différents qui le jouent, depth = parties jouées par joueur ; 1 = moyenne, échelles logarithmiques. Points : les autres champions du rôle (taille = pick rate).</p>':'')+'</div></div></section>';
+  };
+
+  // ---------- rendu ----------
+  const draw=()=>{
+    document.querySelectorAll('.splash').forEach(e=>e.remove());
+    document.body.insertAdjacentHTML('beforeend','<div class="splash"><img src="https://ddragon.leagueoflegends.com/cdn/img/champion/splash/'+encodeURIComponent(champId(champ))+'_0.jpg" alt="" onerror="this.parentNode.remove()"></div>');
+    const opts=(LIST?.roles[role]||[]);
+    app.innerHTML='<h1>Fiche champion</h1><div class="bar mpick"><label>Rôle <select id="mrole">'+MLANES.map(l=>'<option value="'+l+'"'+(l===role?' selected':'')+'>'+lname(l)+'</option>').join('')+'</select></label>'+
+      '<span class="adv-ac"><input id="msearch" placeholder="Chercher un champion…" aria-label="Champion" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="mlist" autocomplete="off"><ul id="mlist" class="adv-ac-list" role="listbox" hidden></ul></span>'+
+      '<small>'+opts.length+' champions en '+lname(role)+(LIST?.patch?' · patch '+esc(LIST.patch):'')+'</small></div>'+
+      hero()+biasBox()+profile()+
+      '<div class="adv-bans mtops">'+topBox('5 plus gros counters','matchups',1)+topBox('5 meilleures synergies','synergies',-1)+'</div>'+
+      explorer();
+    // navigation
+    $('#mrole').onchange=e=>{const r=e.target.value,o=LIST.roles[r];load(o.some(x=>x.c===champ)?champ:(o.find(x=>x.d2)||o[0]).c,r)};
+    app.querySelectorAll('[data-go]').forEach(a=>a.onclick=e=>{e.preventDefault();load(champ,a.dataset.go)});
+    app.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{kind=b.dataset.kind;lane=defLane(kind);draw()});
+    app.querySelectorAll('[data-lane]').forEach(b=>b.onclick=()=>{lane=b.dataset.lane;draw()});
+    $('#mmeta').onchange=e=>{metaOnly=e.target.checked;draw()};
+    app.querySelectorAll('.mtab th.s').forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(k===sk)sdir=-sdir;else{sk=k;sdir=k==='pr'||k==='wr'?-1:1}draw()});
+    // recherche : champions du rôle choisi (triés par pick rate), Entrée ou clic pour ouvrir
+    const inp=$('#msearch'),ul=$('#mlist');let hits=[],hi=0;
+    const render=()=>{const s=nz(inp.value);
+      hits=opts.filter(o=>!s||nz(NAMES[champId(o.c)]||o.c).includes(s)||nz(o.c).includes(s)).slice(0,40);hi=Math.min(hi,Math.max(0,hits.length-1));
+      ul.innerHTML=hits.length?hits.map((o,i)=>'<li role="option" data-c="'+esc(o.c)+'" class="'+(i===hi?'on':'')+'" aria-selected="'+(i===hi)+'">'+ic(o.c,24)+'<span>'+nm(o.c)+'</span><small>'+(o.pr==null?'–':num(o.pr,1)+' %')+'</small></li>').join(''):'<li class="none">Aucun champion</li>';
+      ul.hidden=false;inp.setAttribute('aria-expanded','true');const on=ul.querySelector('li.on');if(on)on.scrollIntoView({block:'nearest'})};
+    const close=()=>{ul.hidden=true;inp.setAttribute('aria-expanded','false')};
+    inp.onfocus=()=>{hi=0;render()};inp.oninput=()=>{hi=0;render()};inp.onblur=()=>setTimeout(close,120);
+    inp.onkeydown=e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();hi=(hi+(e.key==='ArrowDown'?1:-1)+hits.length)%Math.max(1,hits.length);render()}
+      else if(e.key==='Enter'){e.preventDefault();if(hits[hi])load(hits[hi].c,role)}else if(e.key==='Escape')close()};
+    ul.onmousedown=e=>{const li=e.target.closest('li[data-c]');if(li){e.preventDefault();load(li.dataset.c,role)}};
+  };
+}
+const lname=l=>LANE_FR[l]||l;
