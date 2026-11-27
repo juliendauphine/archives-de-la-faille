@@ -554,7 +554,8 @@ function adviceBlock(host,D,p,role){
     const pickGuide=pool=>{
       const champs=pool.champs.filter(c=>RD.d2[c]),opps=RD.opps.map((o,j)=>({o,j,pr:RD.pr[j]})).sort((a,b)=>b.pr-a.pr);
       const vals=champs.flatMap(c=>RD.d2[c]).filter(v=>v!=null).map(Math.abs).sort((a,b)=>a-b);
-      const lim=Math.max(3,Math.ceil(vals[Math.floor(vals.length*.98)]||3));
+      // échelle sur le max (et pas un percentile) : sinon les gros Δ2 débordent dans la colonne de droite
+      const lim=Math.max(3,Math.ceil(vals[vals.length-1]||3));
       const L=230,AW=560,R=230,W=L+AW+R,rh=40,top=50,H=top+opps.length*rh+10,ic=28;
       const xv=v=>L+AW/2+(v/lim)*(AW/2-ic/2);
       let s='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" class="adv-svg pg-svg" role="img" aria-label="Champion à jouer en priorité contre chaque adversaire">';
