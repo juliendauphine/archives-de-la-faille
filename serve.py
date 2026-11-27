@@ -10,6 +10,9 @@ import stats
 from stats import BASE
 
 SITE = os.path.join(BASE, "site")
+# fichiers servis hors de site/ (chemin public -> fichier local)
+EXTRA = {"/blindability.json": os.path.join(BASE, "percentiles", "data", "blindability_data.json"),
+         "/pool_advice.json": os.path.join(BASE, "percentiles", "data", "pool_advice.json")}
 
 
 def background_update():
@@ -33,6 +36,8 @@ def _static_response(path_info, start_response):
     rel = path_info.lstrip("/") or "index.html"
     root = os.path.realpath(SITE)
     full = os.path.realpath(os.path.join(root, rel))
+    if path_info in EXTRA and not os.path.isfile(full):
+        root = full = os.path.realpath(EXTRA[path_info])
 
     if os.path.commonpath([root, full]) != root:
         start_response("403 Forbidden", [("Content-Type", "text/plain; charset=utf-8")])
@@ -105,6 +110,14 @@ if __name__ == "__main__":
             if self.path.split("?")[0] == "/data.json":
                 importlib.reload(stats)
                 b = json.dumps(stats.build(), ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+            elif self.path.split("?")[0] in EXTRA and os.path.isfile(EXTRA[self.path.split("?")[0]]):
+                with open(EXTRA[self.path.split("?")[0]], "rb") as f:
+                    b = f.read()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(b)))
