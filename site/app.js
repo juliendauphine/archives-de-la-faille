@@ -467,7 +467,10 @@ function adviceBlock(host,D,p,role){
     if(!P||!RD||!P.pools.length){host.remove();return}
     const P0=P,RD0=RD;
     // bans choisis sur la page : retirés des deux équipes, recalcul côté serveur (/pool_advice_api)
-    const allChamps=[...new Set([...RD0.opps,...Object.keys(RD0.p_counter)])].sort((a,b)=>(NAMES[champId(a)]||a).localeCompare(NAMES[champId(b)]||b));
+    const byName=(a,b)=>(NAMES[champId(a)]||a).localeCompare(NAMES[champId(b)]||b);
+    const allChamps=[...new Set([...RD0.opps,...Object.keys(RD0.p_counter)])].sort(byName);
+    // locks : en plus, tout champion des données Δ2 du rôle (hors méta : jamais proposé par la recherche, seulement s'il est imposé)
+    const metaSet=new Set(allChamps),lockChamps=[...new Set([...allChamps,...(RD0.lockable||[])])].sort(byName);
     // locks : champions imposés (au départ les obligatoires automatiques, retirables) ; bans : retirés des deux équipes
     const autoLock=P0.must.map(m=>m.c),autoWhy={};P0.must.forEach(m=>autoWhy[m.c]=m.reason);
     // mode du blind pick : chance d'être contré « matchups seuls » ou « + synergies alliées » (défaut = pool_advice.json)
@@ -525,7 +528,7 @@ function adviceBlock(host,D,p,role){
         s+='<text transform="translate('+(x+cw/2+5)+','+(yIC+cw+6)+') rotate(-90)" text-anchor="end" class="an'+(weak?' aw':'')+'">'+esc(o)+'</text>'});
       champs.forEach((c,i)=>{const y=yHM+i*ch;
         s+=icon(c,L-ch-2,y+1,ch-2);
-        s+='<text x="'+(L-ch-10)+'" y="'+(y+ch/2+5)+'" text-anchor="end" class="ar">'+(must[c]?'★ ':'')+nm(c)+' <tspan class="amute">'+num(100*(RD.p_counter[c]??1))+' %</tspan></text>'});
+        s+='<text x="'+(L-ch-10)+'" y="'+(y+ch/2+5)+'" text-anchor="end" class="ar">'+(must[c]?'★ ':'')+nm(c)+' <tspan class="amute">'+(RD.p_counter[c]==null?'–':num(100*RD.p_counter[c])+' %')+'</tspan></text>'});
       // légende de couleur
       const gx=L+n*cw+18;
       [-lim,-lim/2,0,lim/2,lim].forEach((v,i)=>{s+='<rect x="'+gx+'" y="'+(yHM+i*(k*ch/5))+'" width="16" height="'+(k*ch/5)+'" fill="'+divColor(-v,lim)+'"/>'});
@@ -621,11 +624,11 @@ function adviceBlock(host,D,p,role){
         let hits=[],hi=0;
         const render=()=>{
           const q=nz(inp.value);
-          hits=allChamps.filter(c=>!lists[k]().includes(c)&&(!q||nz(label(c)).includes(q)||nz(c).includes(q)))
+          hits=(k==='lock'?lockChamps:allChamps).filter(c=>!lists[k]().includes(c)&&(!q||nz(label(c)).includes(q)||nz(c).includes(q)))
             .sort((a,b)=>(q?(nz(label(b)).startsWith(q)-nz(label(a)).startsWith(q)):0)||label(a).localeCompare(label(b)));
           hi=Math.min(hi,Math.max(0,hits.length-1));
           ul.innerHTML=hits.length?hits.map((c,i)=>'<li role="option" data-c="'+esc(c)+'" class="'+(i===hi?'on':'')+'" aria-selected="'+(i===hi)+'">'+img(champId(c),24,1)+'<span>'+esc(label(c))+'</span>'+
-            (RD0.opps.includes(c)?'<small>'+num(RD0.pr[RD0.opps.indexOf(c)]??0,1)+' %</small>':'')+'</li>').join(''):'<li class="none">Aucun champion</li>';
+            (RD0.opps.includes(c)?'<small>'+num(RD0.pr[RD0.opps.indexOf(c)]??0,1)+' %</small>':!metaSet.has(c)?'<small title="Pas dans la méta du rôle : seulement si tu le lockes">hors méta</small>':'')+'</li>').join(''):'<li class="none">Aucun champion</li>';
           ul.hidden=false;inp.setAttribute('aria-expanded','true');
           const on=ul.querySelector('li.on');if(on)on.scrollIntoView({block:'nearest'});
         };

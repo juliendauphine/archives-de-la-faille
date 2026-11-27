@@ -356,8 +356,17 @@ def advise_pair(player, role, draft_bans=(), locks=None, blind_mode=None):
         "role": {"opps": lane_b["opps"], "pr": [round(R.pick[R.lane][o], 3) for o in lane_b["opps"]],
                  "d2": {c: [None if not np.isfinite(v) else round(float(v), 2) for v in lane_b["M"][R.idx[c]]]
                         for c in shown if c in R.idx},
-                 "p_counter": {c: round(float(R.pcount[i]), 4) for i, c in enumerate(R.univ)}},
+                 # champions lockés hors méta : pas de données de blindabilité -> absents (affichés « – »)
+                 "p_counter": {c: round(float(R.pcount[i]), 4) for i, c in enumerate(R.univ)
+                               if c in ctx["B"]["roles"][R.lane]},
+                 "lockable": lockable(ctx["MATCHUP_D2"], role)},
     }
+
+
+def lockable(MATCHUP_D2, role):
+    """Champions qu'on peut imposer dans le pool d'un rôle : présents dans matchup_d2_data.json pour cette lane."""
+    banned_k = {key(c) for c in BANNED.get(role, [])}
+    return sorted(c for c in MATCHUP_D2[LANE_OF[role]] if key(c) not in banned_k)
 
 
 def main():
@@ -395,6 +404,8 @@ def main():
             "pr": [round(R.pick[R.lane][o], 3) for o in lane_b["opps"]],
             "d2": {c: [None if not np.isfinite(v) else round(float(v), 2) for v in lane_b["M"][i]] for i, c in enumerate(R.univ)},
             "p_counter": {c: round(float(R.pcount[i]), 4) for i, c in enumerate(R.univ)},
+            # champions lockables à la main : tous ceux des matrices Δ2 du rôle (méta ou non) ; jamais candidats sans lock
+            "lockable": lockable(MATCHUP_D2, role),
         }
         for (p, r), (T, n, must) in info.items():
             if r != role:
