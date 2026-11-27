@@ -32,6 +32,20 @@ def background_update():
         print("Mise à jour en erreur :", repr(e))
 
 
+def _advice_api(query):
+    """GET /pool_advice_api?p=<joueur>&r=<ROLE>&ban=A,B : recalcule le top des pools conseillés avec ces bans."""
+    from urllib.parse import parse_qs
+    import pool_advice
+    q = parse_qs(query or "")
+    player, role = q.get("p", [""])[0], q.get("r", [""])[0]
+    bans = [b for b in q.get("ban", [""])[0].split(",") if b.strip()]
+    try:
+        body = pool_advice.advise_pair(player, role, bans)
+        return "200 OK", json.dumps(body, ensure_ascii=False).encode("utf-8")
+    except Exception as e:
+        return "400 Bad Request", json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
+
+
 def _static_response(path_info, start_response):
     rel = path_info.lstrip("/") or "index.html"
     root = os.path.realpath(SITE)
@@ -88,6 +102,12 @@ def app(environ, start_response):
         start_response("200 OK", headers)
         return [] if method == "HEAD" else [payload]
 
+    if path_info == "/pool_advice_api":
+        status, payload = _advice_api(environ.get("QUERY_STRING", ""))
+        start_response(status, [("Content-Type", "application/json; charset=utf-8"),
+                                ("Content-Length", str(len(payload))), ("Cache-Control", "no-store")])
+        return [] if method == "HEAD" else [payload]
+
     body = _static_response(path_info, start_response)
     return [] if method == "HEAD" else body
 
@@ -111,6 +131,13 @@ if __name__ == "__main__":
                 importlib.reload(stats)
                 b = json.dumps(stats.build(), ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(b)))
+                self.end_headers()
+                self.wfile.write(b)
+            elif self.path.split("?")[0] == "/pool_advice_api":
+                status, b = _advice_api(self.path.partition("?")[2])
+                self.send_response(int(status.split()[0]))
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(b)))
                 self.end_headers()

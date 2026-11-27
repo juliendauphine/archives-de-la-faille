@@ -459,11 +459,15 @@ function divColor(v,lim){
 function adviceBlock(host,D,p,role){
   if(!host)return;
   getAdvice().then(A=>{
-    const P=A&&A.players&&A.players[p]&&A.players[p][role],RD=A&&A.roles&&A.roles[role];
+    let P=A&&A.players&&A.players[p]&&A.players[p][role],RD=A&&A.roles&&A.roles[role];
     if(!P||!RD||!P.pools.length){host.remove();return}
+    const P0=P,RD0=RD;
+    // bans choisis sur la page : retirés des deux équipes, recalcul côté serveur (/pool_advice_api)
+    const allChamps=[...new Set([...RD0.opps,...Object.keys(RD0.p_counter)])].sort((a,b)=>(NAMES[champId(a)]||a).localeCompare(NAMES[champId(b)]||b));
+    let pending=[],applied=[],busy=false,err='';
     const {G}=poolScores(D,p,role),byC={};
     G.forEach(r=>{const o=byC[champId(r.champ)]??={n:0,w:0,k:0,d:0,a:0};o.n++;o.w+=r.win?1:0;o.k+=r.k;o.d+=r.d;o.a+=r.a});
-    const must={};P.must.forEach(m=>must[m.c]=m.reason);
+    let must={};const setMust=()=>{must={};P.must.forEach(m=>must[m.c]=m.reason)};setMust();
     const X=A.params.top_x,nm=c=>esc(NAMES[champId(c)]||c);
     const wrc=v=>v>=55?'var(--win)':v>=50?'var(--blue)':v>=45?'var(--gold)':'var(--red)';
     const pcc=v=>v<.3?'var(--win)':v<.5?'var(--gold)':'var(--red)';
@@ -561,6 +565,14 @@ function adviceBlock(host,D,p,role){
     const draw=()=>{
       const pool=P.pools[sel];
       host.innerHTML='<section class="pool adv"><h2>Champion pool conseillé en '+roleName(role)+' <small>'+P.pools.length+' meilleurs pools · top-'+X+' · méta '+(A.params.meta_patches||[]).join(', ')+'</small></h2>'+
+        '<div class="adv-banpick"><b>Champions bannis</b>'+
+          '<span class="chips">'+(pending.length?pending.map(c=>'<span class="chip">'+img(champId(c),20,1)+nm(c)+'<button type="button" data-rm="'+esc(c)+'" aria-label="Retirer '+nm(c)+'">×</button></span>').join(''):'<small>aucun</small>')+'</span>'+
+          '<span class="adv-ac"><input placeholder="Ajouter un champion…" aria-label="Champion à bannir" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="adv-ac-list" autocomplete="off"'+(busy?' disabled':'')+'>'+
+          '<ul id="adv-ac-list" class="adv-ac-list" role="listbox" hidden></ul></span>'+
+          '<button type="button" class="adv-go"'+(busy||String(pending)===String(applied)?' disabled':'')+'>'+(busy?'Calcul…':'Valider')+'</button>'+
+          (applied.length||pending.length?'<button type="button" class="adv-reset"'+(busy?' disabled':'')+'>Réinitialiser</button>':'')+
+          (applied.length?'<small class="adv-applied">Top recalculé sans '+applied.map(nm).join(', ')+'</small>':'')+
+          (err?'<small class="adv-err">'+esc(err)+'</small>':'')+'</div>'+
         '<div class="adv-pick" role="tablist">'+P.pools.map((q,i)=>'<button role="tab" data-i="'+i+'" class="'+(i===sel?'on':'')+'" aria-selected="'+(i===sel)+'"><b>#'+(i+1)+'</b><span>'+q.champs.map(c=>img(champId(c),22,1)).join('')+'</span><small>'+num(q.z.total,2,1)+' σ</small></button>').join('')+'</div>'+
         cards(pool)+
         '<div class="adv-terms">'+Object.keys(ATERM).filter(t=>A.params.weights[role]?.[t]).map(t=>{const v=pool.z[t];return '<span title="poids '+num(A.params.weights[role][t],1)+'"><small>'+ATERM[t]+'</small><b style="color:'+(v>=0?'var(--win)':'var(--red)')+'">'+num(v,2,1)+' σ</b></span>'}).join('')+'<span><small>Total</small><b>'+num(pool.z.total,2,1)+' σ</b></span></div>'+
@@ -573,6 +585,45 @@ function adviceBlock(host,D,p,role){
         'Graphe : adversaires de lane triés par couverture (moyenne des '+X+' meilleures réponses du pool), Δ2 en points de winrate ; encadrés en orange, les adversaires mal couverts ; « — » = même champion, impossible en draft. Main = champion du pool le mieux maîtrisé. '+
         'Bans (adversaires de la même lane) : d’abord jusqu’à 3 counters du blind pick (Δ2 ≤ −1 pt contre lui, classés par pick rate × Δ2), puis les counters globaux (pick rate × couverture négative du pool) ; le pool actuel est le champion pool classique ci-dessus.</p></section>';
       host.querySelectorAll('.adv-pick button').forEach(b=>b.onclick=()=>{sel=+b.dataset.i;draw()});
+      // complétion : liste image + nom filtrée à la frappe ; un clic (ou Entrée sur l'élément surligné) ajoute le champion
+      const inp=host.querySelector('.adv-banpick input'),ul=host.querySelector('.adv-ac-list');
+      let hits=[],hi=0;
+      const label=c=>NAMES[champId(c)]||c;
+      const addC=c=>{if(c&&!pending.includes(c)){pending=[...pending,c];err='';draw();host.querySelector('.adv-banpick input').focus()}};
+      const render=()=>{
+        const q=nz(inp.value);
+        hits=allChamps.filter(c=>!pending.includes(c)&&(!q||nz(label(c)).includes(q)||nz(c).includes(q)))
+          .sort((a,b)=>(q?(nz(label(b)).startsWith(q)-nz(label(a)).startsWith(q)):0)||label(a).localeCompare(label(b)));
+        hi=Math.min(hi,Math.max(0,hits.length-1));
+        ul.innerHTML=hits.length?hits.map((c,i)=>'<li role="option" data-c="'+esc(c)+'" class="'+(i===hi?'on':'')+'" aria-selected="'+(i===hi)+'">'+img(champId(c),24,1)+'<span>'+esc(label(c))+'</span>'+
+          (RD.p_counter[c]!=null&&RD0.opps.includes(c)?'<small>'+num(RD.pr[RD.opps.indexOf(c)]??0,1)+' %</small>':'')+'</li>').join(''):'<li class="none">Aucun champion</li>';
+        ul.hidden=false;inp.setAttribute('aria-expanded','true');
+        const on=ul.querySelector('li.on');if(on)on.scrollIntoView({block:'nearest'});
+      };
+      const close=()=>{ul.hidden=true;inp.setAttribute('aria-expanded','false')};
+      inp.onfocus=()=>{hi=0;render()};
+      inp.oninput=()=>{hi=0;render()};
+      inp.onblur=()=>setTimeout(close,120);
+      inp.onkeydown=e=>{
+        if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(ul.hidden)return render();hi=(hi+(e.key==='ArrowDown'?1:-1)+hits.length)%Math.max(1,hits.length);render()}
+        else if(e.key==='Enter'){e.preventDefault();if(hits[hi])addC(hits[hi])}
+        else if(e.key==='Escape'){close()}};
+      ul.onmousedown=e=>{const li=e.target.closest('li[data-c]');if(li){e.preventDefault();addC(li.dataset.c)}};
+      host.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{pending=pending.filter(c=>c!==b.dataset.rm);draw()});
+      const reset=host.querySelector('.adv-reset');
+      if(reset)reset.onclick=()=>{pending=[];applied=[];P=P0;RD=RD0;setMust();sel=0;err='';draw()};
+      host.querySelector('.adv-go').onclick=async()=>{
+        if(!pending.length){P=P0;RD=RD0;applied=[];setMust();sel=0;draw();return}
+        busy=true;err='';draw();
+        try{
+          const r=await fetch('pool_advice_api?p='+encodeURIComponent(p)+'&r='+encodeURIComponent(role)+'&ban='+encodeURIComponent(pending.join(',')));
+          if(r.status===404)throw new Error('le serveur ne connaît pas encore /pool_advice_api, redémarre python serve.py');
+          const j=await r.json().catch(()=>{throw new Error('réponse invalide du serveur ('+r.status+')')});if(!r.ok||j.error)throw new Error(j.error||r.status);
+          if(!j.pools.length)throw new Error('Aucun pool possible avec ces bans (plus de blind pick disponible ?)');
+          P=j;RD=j.role;applied=[...pending];setMust();sel=0;
+        }catch(e){err='Recalcul impossible : '+(e.message||e)}
+        busy=false;draw();
+      };
     };
     draw();
   });

@@ -108,11 +108,13 @@ def must_haves(T, n_games, meta_name, banned_k):
 
 # ---------------------------------------------------------------- matrices Δ2 d'un rôle
 class RoleData:
-    def __init__(self, role, B, MATCHUP_D2, SYNERGY_D2, extra=(), display_only=()):
+    def __init__(self, role, B, MATCHUP_D2, SYNERGY_D2, extra=(), display_only=(), draft_bans=()):
         self.role, self.lane = role, LANE_OF[role]
         lane = self.lane
-        self.pick = {l: {c: v["pick_rate"] for c, v in B["roles"][l].items()} for l in LANES}
-        banned_k = {key(c) for c in BANNED.get(role, [])}
+        # bans de draft (page web) : le champion n'est jouable par personne -> retiré des adversaires et des alliés
+        ban_k = {key(c) for c in draft_bans}
+        self.pick = {l: {c: v["pick_rate"] for c, v in B["roles"][l].items() if key(c) not in ban_k} for l in LANES}
+        banned_k = {key(c) for c in BANNED.get(role, [])} | ban_k
         univ = list(dict.fromkeys(list(self.pick[lane]) + list(extra)))
         self.univ = [c for c in univ if c in MATCHUP_D2[lane] and key(c) not in banned_k]
         n_cand = len(self.univ)
@@ -282,6 +284,60 @@ def optimise(R, must, mastery, weights, rng):
             "bans": pool_bans(R, names, R.univ[min(pool, key=lambda i: R.pcount[i])]),
         })
     return out
+
+
+# ---------------------------------------------------------------- recalcul à la demande (serveur web)
+_CTX = {}
+
+
+def _context(max_age=300):
+    import time
+    now = time.time()
+    if "B" not in _CTX:
+        _CTX["B"] = _load("blindability_data.json")
+        _CTX["MATCHUP_D2"] = _load("matchup_d2_data.json")
+        _CTX["SYNERGY_D2"] = _load("synergie_d2_data.json")
+        _CTX["meta_name"] = {key(c): c for l in LANES for c in _CTX["MATCHUP_D2"][l]}
+    if now - _CTX.get("D_time", 0) > max_age:
+        _CTX["D"], _CTX["D_time"] = stats.build(), now
+    return _CTX
+
+
+def advise_pair(player, role, draft_bans=()):
+    """Recalcule les N_POOLS pools conseillés d'un couple (joueur, rôle) avec des champions bannis (exclus des deux équipes).
+    Retourne le même format que players[p][role] de pool_advice.json, plus les données de rôle utiles au graphe."""
+    if role not in LANE_OF:
+        raise ValueError("rôle inconnu")
+    ctx = _context()
+    D, meta_name = ctx["D"], ctx["meta_name"]
+    bans = [meta_name.get(key(c), c) for c in draft_bans][:12]
+    ban_k = {key(c) for c in bans} | {key(c) for c in BANNED.get(role, [])}
+    T, n = player_table(D, player, role)
+    must = must_haves(T, n, meta_name, ban_k)
+    start = []
+    if T is not None:
+        for c in T.index[:POOL_SIZE]:
+            m = meta_name.get(key(c))
+            if m and m not in start:
+                start.append(m)
+    R = RoleData(role, ctx["B"], ctx["MATCHUP_D2"], ctx["SYNERGY_D2"], [m["c"] for m in must], start, bans)
+    mastery = np.zeros(len(R.univ))
+    if T is not None:
+        for c, row in T.iterrows():
+            m = meta_name.get(key(c))
+            if m in R.idx:
+                mastery[R.idx[m]] = max(mastery[R.idx[m]], row["score_B"])
+    pools = optimise(R, [m["c"] for m in must], mastery, WEIGHTS[role], np.random.default_rng(SEED))
+    lane_b = R.blocks["lane"][0]
+    shown = {c for q in pools for c in q["champs"]} | set(start)
+    return {
+        "games": int(n), "must": must, "pools": pools, "bans_applied": bans,
+        "start": {"champs": start, "bans": pool_bans(R, start)},
+        "role": {"opps": lane_b["opps"], "pr": [round(R.pick[R.lane][o], 3) for o in lane_b["opps"]],
+                 "d2": {c: [None if not np.isfinite(v) else round(float(v), 2) for v in lane_b["M"][R.idx[c]]]
+                        for c in shown if c in R.idx},
+                 "p_counter": {c: round(float(R.pcount[i]), 4) for i, c in enumerate(R.univ)}},
+    }
 
 
 def main():
