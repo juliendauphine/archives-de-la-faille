@@ -317,7 +317,7 @@ def advise_pair(player, role, draft_bans=(), locks=None, blind_mode=None):
         raise ValueError("rôle inconnu")
     ctx = _context()
     D, meta_name = ctx["D"], ctx["meta_name"]
-    bans = [meta_name.get(key(c), c) for c in draft_bans][:12]
+    bans = list(dict.fromkeys(meta_name.get(key(c), c) for c in draft_bans))
     ban_k = {key(c) for c in bans} | {key(c) for c in BANNED.get(role, [])}
     T, n = player_table(D, player, role)
     must = must_haves(T, n, meta_name, ban_k)
