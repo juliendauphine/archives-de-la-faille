@@ -303,8 +303,10 @@ def _context(max_age=300):
     return _CTX
 
 
-def advise_pair(player, role, draft_bans=()):
+def advise_pair(player, role, draft_bans=(), locks=None):
     """Recalcule les N_POOLS pools conseillés d'un couple (joueur, rôle) avec des champions bannis (exclus des deux équipes).
+    locks : None = obligatoires automatiques ; sinon liste explicite des champions imposés dans le pool (remplace les
+    automatiques, qui gardent leur raison s'ils y figurent ; les autres sont des « lock manuel »).
     Retourne le même format que players[p][role] de pool_advice.json, plus les données de rôle utiles au graphe."""
     if role not in LANE_OF:
         raise ValueError("rôle inconnu")
@@ -314,6 +316,18 @@ def advise_pair(player, role, draft_bans=()):
     ban_k = {key(c) for c in bans} | {key(c) for c in BANNED.get(role, [])}
     T, n = player_table(D, player, role)
     must = must_haves(T, n, meta_name, ban_k)
+    ignored = []
+    if locks is not None:
+        auto = {m["c"]: m["reason"] for m in must}
+        lane = LANE_OF[role]
+        must = []
+        for c in locks:
+            m = meta_name.get(key(c))
+            if not m or m not in ctx["MATCHUP_D2"][lane] or key(m) in ban_k:
+                ignored.append(c)
+            elif m not in [x["c"] for x in must]:
+                must.append({"c": m, "reason": auto.get(m, "lock manuel")})
+        must = must[:POOL_SIZE]
     start = []
     if T is not None:
         for c in T.index[:POOL_SIZE]:
@@ -331,7 +345,7 @@ def advise_pair(player, role, draft_bans=()):
     lane_b = R.blocks["lane"][0]
     shown = {c for q in pools for c in q["champs"]} | set(start)
     return {
-        "games": int(n), "must": must, "pools": pools, "bans_applied": bans,
+        "games": int(n), "must": must, "pools": pools, "bans_applied": bans, "locks_ignored": ignored,
         "start": {"champs": start, "bans": pool_bans(R, start)},
         "role": {"opps": lane_b["opps"], "pr": [round(R.pick[R.lane][o], 3) for o in lane_b["opps"]],
                  "d2": {c: [None if not np.isfinite(v) else round(float(v), 2) for v in lane_b["M"][R.idx[c]]]

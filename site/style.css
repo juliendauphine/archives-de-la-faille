@@ -389,3 +389,12 @@ code{background:var(--bg);padding:1px 5px;border-radius:4px}
 .adv-ac-list li.on,.adv-ac-list li[data-c]:hover{background:var(--hl)}
 .adv-ac-list li.none{color:var(--mute);cursor:default}
 .adv-banpick .chips{align-items:center}.adv-banpick .chips>small{line-height:1;margin:0}
+/* barre locks + bans : libellé à gauche, pastilles au milieu, saisie fixe à droite */
+.adv-banpick{display:grid;gap:8px}
+.adv-row{display:grid;grid-template-columns:150px 1fr 250px;align-items:center;gap:10px}
+.adv-row .adv-ac{width:250px}
+.adv-banpick .chip.lock{background:color-mix(in srgb,var(--gold) 18%,transparent);border-color:var(--gold)}
+.adv-banpick .chip.lock img{filter:none}
+.adv-actions{display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap}
+.adv-actions .adv-applied,.adv-actions .adv-err{margin-right:auto;flex-basis:auto}
+@media(max-width:640px){.adv-row{grid-template-columns:1fr}.adv-row .adv-ac{width:100%}}
