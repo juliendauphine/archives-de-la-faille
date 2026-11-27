@@ -6,3 +6,6 @@ games_v5/
 *.ipynb
 *.mp4
 notebooks/icons/
+# brut lolalytics (~100 Mo) : seule la version compacte percentiles/data/champion_meta/ est versionnée (python prepare_data.py)
+percentiles/data/lolalytics_data_*.json
+percentiles/data/README_nouveau_patch.md

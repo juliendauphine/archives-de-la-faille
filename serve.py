@@ -63,9 +63,10 @@ def _champion_api(query):
     q = parse_qs(query or "")
     champ, role, sc = q.get("c", [""])[0], q.get("r", [""])[0], q.get("scaling", [""])[0]
     try:
-        body = (champion_meta.scaling(sc) if sc else
-                champion_meta.champion(champ, role or "top") if champ else champion_meta.champion_list())
-        return "200 OK", json.dumps(body, ensure_ascii=False).encode("utf-8")
+        # fichiers précalculés par prepare_data.py : renvoyés tels quels
+        return "200 OK", (champion_meta.scaling_json(sc) if sc else
+                          champion_meta.champion_json(champ, role or "top") if champ else
+                          champion_meta.champion_list_json())
     except Exception as e:
         return "400 Bad Request", json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
 
