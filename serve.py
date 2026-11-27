@@ -33,7 +33,7 @@ def background_update():
 
 
 def _advice_api(query):
-    """GET /pool_advice_api?p=<joueur>&r=<ROLE>&ban=A,B[&lock=C,D] : recalcule le top des pools conseillés avec ces bans / locks."""
+    """GET /pool_advice_api?p=<joueur>&r=<ROLE>&ban=A,B[&lock=C,D][&bm=matchups|matchups_synergies] : recalcule le top des pools conseillés avec ces bans / locks."""
     from urllib.parse import parse_qs
     import pool_advice
     q = parse_qs(query or "", keep_blank_values=True)
@@ -42,7 +42,7 @@ def _advice_api(query):
     # lock absent = obligatoires automatiques ; lock présent (même vide) = liste explicite
     locks = [b for b in q["lock"][0].split(",") if b.strip()] if "lock" in q else None
     try:
-        body = pool_advice.advise_pair(player, role, bans, locks)
+        body = pool_advice.advise_pair(player, role, bans, locks, q.get("bm", [None])[0])
         return "200 OK", json.dumps(body, ensure_ascii=False).encode("utf-8")
     except Exception as e:
         return "400 Bad Request", json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")

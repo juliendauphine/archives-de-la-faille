@@ -445,3 +445,11 @@ svg a.cplink:hover text,svg a.cplink:hover{fill:var(--gold);text-decoration:unde
 .mkey{display:inline-block;width:18px;height:0;border-top:2.5px solid var(--gold);vertical-align:middle;margin:0 5px 0 0}.mkey.mkr{border-top:1.6px dashed var(--mute);margin-left:12px}
 .mpb .mq{fill:var(--mute);font:700 13px Inter,system-ui,sans-serif;opacity:.6;text-transform:uppercase;letter-spacing:.06em}.mpb .mq.on{fill:var(--gold);opacity:1}
 .mpb .mpo{fill:var(--mute);opacity:.35}.mpb a:hover .mpo{opacity:.9;fill:var(--blue)}
+/* pool détecté dans la liste des pools conseillés */
+.adv-pick button.det{border-style:dashed}.adv-pick button.det b{color:var(--mute);font-weight:700}
+.adv-pick button.det.on{background:var(--panel);border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+.adv-det{background:color-mix(in srgb,var(--blue) 12%,transparent);border:1px dashed var(--blue);border-radius:10px;padding:10px 14px;margin:0 0 14px;font-size:14px}
+.adv-det b{color:var(--blue)}
+.blind-of{font:400 14px Inter,system-ui,sans-serif;color:var(--mute);margin-left:10px;display:inline-flex;align-items:center;gap:3px;vertical-align:middle}
+.blind-of img{margin-left:2px}
+.adv-mode .chips button{cursor:pointer;border-radius:999px;padding:4px 12px}.adv-mode .chips button.on{background:var(--gold);color:var(--bg);border-color:var(--gold)}

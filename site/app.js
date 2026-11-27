@@ -470,15 +470,22 @@ function adviceBlock(host,D,p,role){
     const allChamps=[...new Set([...RD0.opps,...Object.keys(RD0.p_counter)])].sort((a,b)=>(NAMES[champId(a)]||a).localeCompare(NAMES[champId(b)]||b));
     // locks : champions imposés (au départ les obligatoires automatiques, retirables) ; bans : retirés des deux équipes
     const autoLock=P0.must.map(m=>m.c),autoWhy={};P0.must.forEach(m=>autoWhy[m.c]=m.reason);
-    let ban=[],lock=[...autoLock],appBan=[],appLock=[...autoLock],busy=false,err='',focusK=null,quiet=false;
-    const isDefault=(b,l)=>!b.length&&String(l)===String(autoLock);
+    // mode du blind pick : chance d'être contré « matchups seuls » ou « + synergies alliées » (défaut = pool_advice.json)
+    const bm0=A.params.blind_mode||'matchups_synergies',BMODES=[['matchups_synergies','+ synergies alliées'],['matchups','Matchups seuls']];
+    const bmName=m=>(BMODES.find(x=>x[0]===m)||[0,m])[1];
+    let ban=[],lock=[...autoLock],appBan=[],appLock=[...autoLock],bm=bm0,appBm=bm0,busy=false,err='',focusK=null,quiet=false;
+    const isDefault=(b,l,m)=>!b.length&&String(l)===String(autoLock)&&m===bm0;
     const {G}=poolScores(D,p,role),byC={};
     G.forEach(r=>{const o=byC[champId(r.champ)]??={n:0,w:0,k:0,d:0,a:0};o.n++;o.w+=r.win?1:0;o.k+=r.k;o.d+=r.d;o.a+=r.a});
     let must={};const setMust=()=>{must={};P.must.forEach(m=>must[m.c]=m.reason)};setMust();
     const X=A.params.top_x,nm=c=>esc(NAMES[champId(c)]||c);
     const wrc=v=>v>=55?'var(--win)':v>=50?'var(--blue)':v>=45?'var(--gold)':'var(--red)';
     const pcc=v=>v<.3?'var(--win)':v<.5?'var(--gold)':'var(--red)';
-    let sel=0;
+    // pool détecté (champion pool actuel du joueur) en tête de liste, pour comparer sa couverture : ce n'est pas un conseil
+    const LIST=()=>(P.start&&P.start.z?[{...P.start,detected:true}]:[]).concat(P.pools),off=()=>LIST().length-P.pools.length;
+    const sel0=()=>off();   // sélection par défaut : le pool conseillé n°1
+    const ptitle=(q,i)=>q.detected?'Pool détecté':'Pool conseillé #'+(i+1-off());
+    let sel=sel0();
     const icon=(c,x,y,s,extra)=>'<image href="https://ddragon.leagueoflegends.com/cdn/'+VER+'/img/champion/'+encodeURIComponent(champId(c))+'.png" x="'+x+'" y="'+y+'" width="'+s+'" height="'+s+'"'+(extra||'')+'><title>'+nm(c)+'</title></image>';
     const cards=pool=>'<div class="pool-grid">'+pool.champs.map(c=>{
       const o=byC[champId(c)],isMain=c===pool.main,isBlind=c===pool.blind,pc=RD.p_counter[c];
@@ -570,7 +577,9 @@ function adviceBlock(host,D,p,role){
       return s+'</svg>';
     };
     const draw=()=>{
-      const pool=P.pools[sel];
+      const PL=LIST();if(!PL[sel])sel=sel0();
+      const pool=PL[sel];
+      BLIND_POOL={champs:pool.champs,label:pool.detected?'pool détecté':'pool conseillé #'+(sel+1-off()),mode:appBm};if(BLIND_REDRAW)BLIND_REDRAW();
       host.innerHTML='<section class="pool adv"><h2>Champion pool conseillé en '+roleName(role)+' <small>'+P.pools.length+' meilleurs pools · top-'+X+' · méta '+(A.params.meta_patches||[]).join(', ')+'</small></h2>'+
         '<div class="adv-banpick">'+
           [['lock','Champions lockés',lock],['ban','Champions bannis',ban]].map(([k,lab,list])=>'<div class="adv-row" data-k="'+k+'"><b>'+lab+'</b>'+
@@ -578,23 +587,25 @@ function adviceBlock(host,D,p,role){
               '<button type="button" data-rm="'+esc(c)+'" data-k="'+k+'" aria-label="Retirer '+nm(c)+'">×</button></span>').join(''):'<small>aucun</small>')+'</span>'+
             '<span class="adv-ac"><input placeholder="'+(k==='lock'?'Locker un champion…':'Bannir un champion…')+'" aria-label="'+lab+'" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="adv-ac-'+k+'" autocomplete="off"'+(busy?' disabled':'')+'>'+
             '<ul id="adv-ac-'+k+'" class="adv-ac-list" role="listbox" hidden></ul></span></div>').join('')+
+          '<div class="adv-row adv-mode"><b>Blind pick</b><span class="chips">'+BMODES.map(([k,t])=>'<button type="button" data-bm="'+k+'" class="'+(k===bm?'on':'')+'"'+(busy?' disabled':'')+' title="Blind pick jugé sur la chance d’être contré '+(k==='matchups'?'par les adversaires seulement (alliés choisis ensemble, clash)':'par les adversaires et les anti-synergies alliées (soloQ)')+'">'+t+'</button>').join('')+'</span><span></span></div>'+
           '<div class="adv-actions">'+
-            (!isDefault(appBan,appLock)?'<small class="adv-applied">Top recalculé'+(String(appLock)!==String(autoLock)?' · lockés : '+(appLock.map(nm).join(', ')||'aucun'):'')+(appBan.length?' · sans '+appBan.map(nm).join(', '):'')+'</small>':'')+
+            (!isDefault(appBan,appLock,appBm)?'<small class="adv-applied">Top recalculé'+(appBm!==bm0?' · blind : '+bmName(appBm).toLowerCase():'')+(String(appLock)!==String(autoLock)?' · lockés : '+(appLock.map(nm).join(', ')||'aucun'):'')+(appBan.length?' · sans '+appBan.map(nm).join(', '):'')+'</small>':'')+
             (err?'<small class="adv-err">'+esc(err)+'</small>':'')+
-            (!isDefault(ban,lock)||!isDefault(appBan,appLock)?'<button type="button" class="adv-reset"'+(busy?' disabled':'')+'>Réinitialiser</button>':'')+
-            '<button type="button" class="adv-go"'+(busy||(String(ban)===String(appBan)&&String(lock)===String(appLock))?' disabled':'')+'>'+(busy?'Calcul…':'Valider')+'</button>'+
+            (!isDefault(ban,lock,bm)||!isDefault(appBan,appLock,appBm)?'<button type="button" class="adv-reset"'+(busy?' disabled':'')+'>Réinitialiser</button>':'')+
+            '<button type="button" class="adv-go"'+(busy||(String(ban)===String(appBan)&&String(lock)===String(appLock)&&bm===appBm)?' disabled':'')+'>'+(busy?'Calcul…':'Valider')+'</button>'+
           '</div></div>'+
-        '<div class="adv-pick" role="tablist">'+P.pools.map((q,i)=>'<button role="tab" data-i="'+i+'" class="'+(i===sel?'on':'')+'" aria-selected="'+(i===sel)+'"><b>#'+(i+1)+'</b><span>'+q.champs.map(c=>img(champId(c),22,1)).join('')+'</span><small>'+num(q.z.total,2,1)+' σ</small></button>').join('')+'</div>'+
+        '<div class="adv-pick" role="tablist">'+PL.map((q,i)=>'<button role="tab" data-i="'+i+'" class="'+(i===sel?'on':'')+(q.detected?' det':'')+'" aria-selected="'+(i===sel)+'" title="'+(q.detected?'Ton champion pool actuel (pas un conseil)':ptitle(q,i))+'"><b>'+(q.detected?'Actuel':'#'+(i+1-off()))+'</b><span>'+q.champs.map(c=>img(champId(c),22,1)).join('')+'</span><small>'+num(q.z.total,2,1)+' σ</small></button>').join('')+'</div>'+
+        (pool.detected?'<p class="adv-det"><b>Pool détecté — ce n’est pas un pool conseillé.</b> Ce sont les '+pool.champs.length+' champions que '+esc(p.split('#')[0])+' joue le plus en '+roleName(role)+' (champion pool ci-dessus), notés comme les pools conseillés pour comparer leur couverture.'+(pool.valid===false?' Il ne contient aucun blind correct (chance d’être contré &lt; '+num(100*A.params.blind_max_p)+' %) : un pool conseillé en exige un.':'')+'</p>':'')+
         cards(pool)+
         '<div class="adv-terms">'+Object.keys(ATERM).filter(t=>A.params.weights[role]?.[t]).map(t=>{const v=pool.z[t];return '<span title="poids '+num(A.params.weights[role][t],1)+'"><small>'+ATERM[t]+'</small><b style="color:'+(v>=0?'var(--win)':'var(--red)')+'">'+num(v,2,1)+' σ</b></span>'}).join('')+'<span><small>Total</small><b>'+num(pool.z.total,2,1)+' σ</b></span></div>'+
-        '<h3 class="adv-sub">Top 5 bans <small>survole un ban pour le détail</small></h3><div class="adv-bans">'+bansBox('Pool conseillé #'+(sel+1),pool.champs,pool.bans)+bansBox('Pool actuel',(P.start||{}).champs||[],(P.start||{}).bans)+'</div>'+
+        '<h3 class="adv-sub">Top 5 bans <small>survole un ban pour le détail</small></h3><div class="adv-bans">'+bansBox(ptitle(pool,sel)+(pool.detected?' (pas un conseil)':''),pool.champs,pool.bans)+'</div>'+
         '<div class="cbody adv-graph"><div class="scroll">'+graph(pool)+'</div></div>'+
         '<h3 class="adv-sub">Qui jouer en priorité <small>pour chaque champion adverse en '+roleName(role)+', trié par pick rate</small></h3>'+
         '<div class="cbody adv-graph"><div class="scroll">'+pickGuide(pool)+'</div></div>'+
         '<p class="legend">Pool calculé sur les données méta (matchups et synergies Δ2) autour des champions obligatoires de '+esc(p.split('#')[0])+' (★ : '+(P.must.map(m=>nm(m.c)+' – '+esc(m.reason)).join(', ')||'aucun')+'). '+
         'Chaque terme est exprimé en écarts-types par rapport à des pools aléatoires ; il faut au moins un blind correct (chance d’être contré &lt; '+num(100*A.params.blind_max_p)+' %). '+
         'Graphe : adversaires de lane triés par couverture (moyenne des '+X+' meilleures réponses du pool), Δ2 en points de winrate ; encadrés en orange, les adversaires mal couverts ; « — » = même champion, impossible en draft. Main = champion du pool le mieux maîtrisé. '+
-        'Bans (adversaires de la même lane) : d’abord jusqu’à 3 counters du blind pick (Δ2 ≤ −1 pt contre lui, classés par pick rate × Δ2), puis les counters globaux (pick rate × couverture négative du pool) ; le pool actuel est le champion pool classique ci-dessus.</p></section>';
+        'Bans (adversaires de la même lane) : d’abord jusqu’à 3 counters du blind pick (Δ2 ≤ −1 pt contre lui, classés par pick rate × Δ2), puis les counters globaux (pick rate × couverture négative du pool) ; « Actuel » = pool détecté (champion pool classique ci-dessus), montré pour comparaison, pas comme un conseil.</p></section>';
       host.querySelectorAll('.adv-pick button').forEach(b=>b.onclick=()=>{sel=+b.dataset.i;draw()});
       // complétion (image + nom, filtrée à la frappe) pour chaque ligne ; un clic ou Entrée ajoute le champion
       const label=c=>NAMES[champId(c)]||c;
@@ -605,7 +616,7 @@ function adviceBlock(host,D,p,role){
         if(k==='lock'){lock=[...lock,c];ban=ban.filter(x=>x!==c)}else{ban=[...ban,c];lock=lock.filter(x=>x!==c)}
         err='';focusK=k;draw();
       };
-      host.querySelectorAll('.adv-row').forEach(row=>{
+      host.querySelectorAll('.adv-row[data-k]').forEach(row=>{
         const k=row.dataset.k,inp=row.querySelector('input'),ul=row.querySelector('.adv-ac-list');
         let hits=[],hi=0;
         const render=()=>{
@@ -632,17 +643,19 @@ function adviceBlock(host,D,p,role){
       });
       if(focusK){const f=host.querySelector('.adv-row[data-k="'+focusK+'"] input');focusK=null;if(f){quiet=true;f.focus()}}
       host.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const c=b.dataset.rm;if(b.dataset.k==='lock')lock=lock.filter(x=>x!==c);else ban=ban.filter(x=>x!==c);err='';draw()});
+      // changer le mode du blind pick relance tout de suite le calcul (avec les bans / locks en cours)
+      host.querySelectorAll('[data-bm]').forEach(b=>b.onclick=()=>{if(b.dataset.bm===bm)return;bm=b.dataset.bm;err='';draw();host.querySelector('.adv-go').onclick()});
       const reset=host.querySelector('.adv-reset');
-      if(reset)reset.onclick=()=>{ban=[];lock=[...autoLock];appBan=[];appLock=[...autoLock];P=P0;RD=RD0;setMust();sel=0;err='';draw()};
+      if(reset)reset.onclick=()=>{ban=[];lock=[...autoLock];appBan=[];appLock=[...autoLock];bm=appBm=bm0;P=P0;RD=RD0;setMust();sel=sel0();err='';draw()};
       host.querySelector('.adv-go').onclick=async()=>{
-        if(isDefault(ban,lock)){P=P0;RD=RD0;appBan=[];appLock=[...autoLock];setMust();sel=0;err='';draw();return}
+        if(isDefault(ban,lock,bm)){P=P0;RD=RD0;appBan=[];appLock=[...autoLock];appBm=bm0;setMust();sel=sel0();err='';draw();return}
         busy=true;err='';draw();
         try{
-          const r=await fetch('pool_advice_api?p='+encodeURIComponent(p)+'&r='+encodeURIComponent(role)+'&ban='+encodeURIComponent(ban.join(','))+'&lock='+encodeURIComponent(lock.join(',')));
+          const r=await fetch('pool_advice_api?p='+encodeURIComponent(p)+'&r='+encodeURIComponent(role)+'&ban='+encodeURIComponent(ban.join(','))+'&lock='+encodeURIComponent(lock.join(','))+'&bm='+encodeURIComponent(bm));
           if(r.status===404)throw new Error('le serveur ne connaît pas encore /pool_advice_api, redémarre python serve.py');
           const j=await r.json().catch(()=>{throw new Error('réponse invalide du serveur ('+r.status+')')});if(!r.ok||j.error)throw new Error(j.error||r.status);
           if(!j.pools.length)throw new Error('aucun pool possible : il faut au moins un blind pick (chance d’être contré < '+num(100*A.params.blind_max_p)+' %) parmi les places libres ou les lockés');
-          P=j;RD=j.role;appBan=[...ban];appLock=[...lock];setMust();sel=0;
+          P=j;RD=j.role;appBan=[...ban];appLock=[...lock];appBm=bm;setMust();sel=sel0();
           if(j.locks_ignored&&j.locks_ignored.length)err='Lock ignoré (pas de données en '+roleName(role)+') : '+j.locks_ignored.join(', ');
         }catch(e){err='Recalcul impossible : '+(e.message||e)}
         busy=false;draw();
@@ -672,18 +685,25 @@ function beeswarm(ys,d){
   });
   return xs;
 }
+// pool affiché par le graphe de blindabilité : celui sélectionné dans le champion pool conseillé (adviceBlock),
+// sinon le champion pool détecté. BLIND_REDRAW redessine le graphe quand la sélection change.
+let BLIND_POOL=null,BLIND_REDRAW=null;
 function blindChart(host,D,p,role){
   const rk=BROLE[role];if(!host||!rk)return;
   getBlind().then(B=>{
     const R=B&&B.roles&&B.roles[rk];if(!R){host.remove();return}
-    const pool=poolScores(D,p,role).L.slice(0,POOL.top),rank={};
-    pool.forEach((o,i)=>rank[champId(o.c)]=i+1);
-    let mode='matchups_synergies';
+    const detected=poolScores(D,p,role).L.slice(0,POOL.top).map(o=>o.c);
+    let mode='matchups_synergies',syncMode=null;
     const draw=()=>{
+      if(!host.isConnected){BLIND_REDRAW=null;return}
+      // suit le mode de blind pick choisi dans le champion pool conseillé (les boutons du graphe restent utilisables)
+      if(BLIND_POOL&&BLIND_POOL.mode&&BLIND_POOL.mode!==syncMode){mode=syncMode=BLIND_POOL.mode}
+      const cur=BLIND_POOL?BLIND_POOL.champs:detected,plabel=BLIND_POOL?BLIND_POOL.label:'champion pool',rank={};
+      cur.forEach((c,i)=>rank[champId(c)]=i+1);
       const P=B.params||{},col=BCOL[rk],thr=P.counter_threshold??-2;
       const L=Object.entries(R).map(([n,v])=>({n,id:champId(n),v:100*(v['p_counter_'+mode]??0)})).sort((a,b)=>a.v-b.v);
       const mine=L.filter(o=>rank[o.id]).sort((a,b)=>rank[a.id]-rank[b.id]);
-      const missing=pool.filter(o=>!L.some(x=>x.id===champId(o.c))).map(o=>esc(NAMES[o.c]||o.c));
+      const missing=cur.filter(c=>!L.some(x=>x.id===champId(c))).map(c=>esc(NAMES[champId(c)]||c));
       // géométrie (unités du viewBox)
       const W=960,H=540,top=14,bot=H-14,left=56,pw=W-left,yv=v=>top+(1-v/104)*(bot-top);
       const cx=left+pw*.36,half=pw*.29;
@@ -717,15 +737,16 @@ function blindChart(host,D,p,role){
       }
       svg+='</svg>';
       const pools=Object.entries(P.pool_sizes||{}).map(([l,n])=>(BLAB[l]||l)+' '+n).join(', ');
-      host.innerHTML='<section class="blind"><h2>Blindability</h2><div class="bar"><b>Chance d’un counter <span style="color:var(--blue)">'+num(thr,0,1).replace('-','−')+' %</span> '+(mode==='matchups'?'(toutes lanes)':'(toutes lanes + alliés)')+' — <span style="color:'+col+'">'+BLAB[rk]+'</span></b>'+
+      host.innerHTML='<section class="blind"><h2>Blindability <small class="blind-of">'+esc(plabel)+' : '+cur.map(c=>img(champId(c),20,1)).join('')+'</small></h2><div class="bar"><b>Chance d’un counter <span style="color:var(--blue)">'+num(thr,0,1).replace('-','−')+' %</span> '+(mode==='matchups'?'(toutes lanes)':'(toutes lanes + alliés)')+' — <span style="color:'+col+'">'+BLAB[rk]+'</span></b>'+
         [['matchups_synergies','+ synergies alliées'],['matchups','Matchups seuls']].map(([k,l])=>'<button data-m="'+k+'" class="'+(k===mode?'on':'')+'">'+l+'</button>').join('')+'</div>'+
         '<div class="cbody">'+svg+'</div>'+
         '<p class="legend">Probabilité qu’au moins un adversaire'+(mode==='matchups'?'':' (ou un allié)')+' ait dans son pool un champion qui fait perdre au moins '+Math.abs(thr)+' pts de winrate (sous la moyenne du champion). Plus c’est bas, plus le champion se blind pick facilement. '+
-        'En couleur : les '+mine.length+' champions du pool de '+esc(p.split('#')[0])+' (numéro = rang dans le pool), le crochet relie son meilleur et son pire blind ; les autres champions du rôle sont en transparence. '+
+        'En couleur : les '+mine.length+' champions du '+esc(plabel)+' de '+esc(p.split('#')[0])+(BLIND_POOL?' (sélectionné dans le champion pool conseillé ci-dessus)':'')+' (numéro = rang dans le pool), le crochet relie son meilleur et son pire blind ; les autres champions du rôle sont en transparence. '+
         (missing.length?'Hors données (pick rate &lt; '+num(P.min_playrate??.5,1)+' % en '+roleName(role)+') : '+missing.join(', ')+'. ':'')+
         L.length+' champions · méta '+(P.meta_patches||[]).join(', ')+' · méthode '+esc(P.method||'')+' · pool : '+pools+'.</p></section>';
       host.querySelectorAll('button[data-m]').forEach(b=>b.onclick=()=>{mode=b.dataset.m;draw()});
     };
+    BLIND_REDRAW=draw;
     draw();
   });
 }

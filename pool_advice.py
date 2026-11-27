@@ -33,7 +33,8 @@ MAX_MUST = 4
 FORCE_SHARE, FORCE_WR = 0.25, 0.47
 MASTERY_MIN_N, MASTERY_MIN_LISS = 15, 0.50
 BLIND_MAX_P = 0.50
-BLIND_MODE = "matchups_synergies"
+BLIND_MODE = "matchups_synergies"          # mode par défaut (pool_advice.json) ; la page peut demander l'autre
+BLIND_MODES = ("matchups", "matchups_synergies")
 # lane / out : couverture des matchups · syn : synergie globale · util : couverture des synergies · mastery : maîtrise du joueur
 DEFAULT_W = {"lane": 0.7, "out": 0.4, "syn": 1.1, "mastery": 0.5, "util": 0}
 WEIGHTS = {r: dict(DEFAULT_W) for r in ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]}
@@ -108,7 +109,7 @@ def must_haves(T, n_games, meta_name, banned_k):
 
 # ---------------------------------------------------------------- matrices Δ2 d'un rôle
 class RoleData:
-    def __init__(self, role, B, MATCHUP_D2, SYNERGY_D2, extra=(), display_only=(), draft_bans=()):
+    def __init__(self, role, B, MATCHUP_D2, SYNERGY_D2, extra=(), display_only=(), draft_bans=(), blind_mode=None):
         self.role, self.lane = role, LANE_OF[role]
         lane = self.lane
         # bans de draft (page web) : le champion n'est jouable par personne -> retiré des adversaires et des alliés
@@ -122,7 +123,9 @@ class RoleData:
         self.univ += [c for c in dict.fromkeys(display_only) if c in MATCHUP_D2[lane] and c not in self.univ]
         self.cand = set(range(n_cand))
         self.idx = {c: i for i, c in enumerate(self.univ)}
-        p_counter = {c: v["p_counter_" + BLIND_MODE] for c, v in B["roles"][lane].items()}
+        # blind pick jugé sur la chance d'être contré « matchups seuls » ou « matchups + synergies alliées »
+        self.blind_mode = blind_mode if blind_mode in BLIND_MODES else BLIND_MODE
+        p_counter = {c: v["p_counter_" + self.blind_mode] for c, v in B["roles"][lane].items()}
         self.pcount = np.array([p_counter.get(c, 1.0) for c in self.univ])
         self.is_blind = self.pcount < BLIND_MAX_P
         self.blocks = {"lane": [self._build(MATCHUP_D2, lane)],
@@ -213,7 +216,9 @@ def pool_bans(R, champs, blind=None, n=N_BANS):
 
 
 # ---------------------------------------------------------------- optimisation pour un joueur
-def optimise(R, must, mastery, weights, rng):
+def optimise(R, must, mastery, weights, rng, also=None):
+    """Retourne (pools conseillés, entrée du pool `also`) ; `also` (ex. pool détecté du joueur) est noté avec la même
+    normalisation que les pools conseillés pour être comparable, mais n'entre pas dans le classement."""
     X = TOP_X.get(POOL_SIZE, 2)
     must_idx = [R.idx[c] for c in must if c in R.idx]
     free_idx = [i for i in sorted(R.cand) if i not in must_idx]
@@ -270,20 +275,20 @@ def optimise(R, must, mastery, weights, rng):
                     p, c = cand[j]
                     cur[p], cur_tot, improved = c, tot[j], True
 
-    out = []
-    for free, _ in sorted(best.items(), key=lambda kv: -kv[1])[:N_POOLS]:
-        pool = must_idx + list(free)
+    def entry(pool):
         z = score(np.array([pool]))
         names = [R.univ[i] for i in pool]
         played = [(mastery[i], R.univ[i]) for i in pool if mastery[i] > 0]
-        out.append({
-            "champs": names,
-            "z": {t: round(float(z[t][0]), 3) for t in TERMS + ["total"]},
-            "blind": R.univ[min(pool, key=lambda i: R.pcount[i])],
-            "main": max(played)[1] if played else None,
-            "bans": pool_bans(R, names, R.univ[min(pool, key=lambda i: R.pcount[i])]),
-        })
-    return out
+        blind = R.univ[min(pool, key=lambda i: R.pcount[i])]
+        zz = {t: round(float(z[t][0]), 3) for t in TERMS}
+        # total sans la contrainte de blind (sinon −inf) ; valid dit si le pool contient un blind correct
+        zz["total"] = round(float(sum(weights[t] * z[t][0] for t in TERMS)), 3)
+        return {"champs": names, "z": zz, "valid": bool(R.is_blind[pool].any()), "blind": blind,
+                "main": max(played)[1] if played else None, "bans": pool_bans(R, names, blind)}
+
+    out = [entry(must_idx + list(free)) for free, _ in sorted(best.items(), key=lambda kv: -kv[1])[:N_POOLS]]
+    also_idx = [R.idx[c] for c in (also or []) if c in R.idx]
+    return out, (entry(also_idx) if len(also_idx) >= X else None)
 
 
 # ---------------------------------------------------------------- recalcul à la demande (serveur web)
@@ -303,7 +308,7 @@ def _context(max_age=300):
     return _CTX
 
 
-def advise_pair(player, role, draft_bans=(), locks=None):
+def advise_pair(player, role, draft_bans=(), locks=None, blind_mode=None):
     """Recalcule les N_POOLS pools conseillés d'un couple (joueur, rôle) avec des champions bannis (exclus des deux équipes).
     locks : None = obligatoires automatiques ; sinon liste explicite des champions imposés dans le pool (remplace les
     automatiques, qui gardent leur raison s'ils y figurent ; les autres sont des « lock manuel »).
@@ -334,19 +339,20 @@ def advise_pair(player, role, draft_bans=(), locks=None):
             m = meta_name.get(key(c))
             if m and m not in start:
                 start.append(m)
-    R = RoleData(role, ctx["B"], ctx["MATCHUP_D2"], ctx["SYNERGY_D2"], [m["c"] for m in must], start, bans)
+    R = RoleData(role, ctx["B"], ctx["MATCHUP_D2"], ctx["SYNERGY_D2"], [m["c"] for m in must], start, bans, blind_mode)
     mastery = np.zeros(len(R.univ))
     if T is not None:
         for c, row in T.iterrows():
             m = meta_name.get(key(c))
             if m in R.idx:
                 mastery[R.idx[m]] = max(mastery[R.idx[m]], row["score_B"])
-    pools = optimise(R, [m["c"] for m in must], mastery, WEIGHTS[role], np.random.default_rng(SEED))
+    pools, start_e = optimise(R, [m["c"] for m in must], mastery, WEIGHTS[role], np.random.default_rng(SEED), start)
     lane_b = R.blocks["lane"][0]
     shown = {c for q in pools for c in q["champs"]} | set(start)
     return {
         "games": int(n), "must": must, "pools": pools, "bans_applied": bans, "locks_ignored": ignored,
-        "start": {"champs": start, "bans": pool_bans(R, start)},
+        "blind_mode": R.blind_mode,
+        "start": start_e or {"champs": start, "bans": pool_bans(R, start)},
         "role": {"opps": lane_b["opps"], "pr": [round(R.pick[R.lane][o], 3) for o in lane_b["opps"]],
                  "d2": {c: [None if not np.isfinite(v) else round(float(v), 2) for v in lane_b["M"][R.idx[c]]]
                         for c in shown if c in R.idx},
@@ -399,7 +405,6 @@ def main():
                     m = meta_name.get(key(c))
                     if m in R.idx:
                         mastery[R.idx[m]] = max(mastery[R.idx[m]], row["score_B"])
-            pools = optimise(R, [m["c"] for m in must], mastery, WEIGHTS[role], rng)
             # pool de départ = champion pool classique du site (top 5 du score B, ≥ MIN_N parties)
             start = []
             if T is not None:
@@ -407,9 +412,10 @@ def main():
                     m = meta_name.get(key(c))
                     if m and m not in start:
                         start.append(m)
+            pools, start_e = optimise(R, [m["c"] for m in must], mastery, WEIGHTS[role], rng, start)
             out["players"].setdefault(p, {})[role] = {
                 "games": int(n), "must": must, "pools": pools,
-                "start": {"champs": start, "bans": pool_bans(R, start)}}
+                "start": start_e or {"champs": start, "bans": pool_bans(R, start)}}
             best = pools[0]["champs"] if pools else []
             print(f"{p:22s} {role:8s} {n:4d} parties · obligatoires {[m['c'] for m in must]} -> {' · '.join(best)}")
 
