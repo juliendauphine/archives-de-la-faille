@@ -156,12 +156,16 @@ class RoleData:
                 M[i, ok[i]] = mu + (d - mu) * tau2 / (tau2 + se2)
         same = np.array([[key(o) == key(c) for o in opps] for c in self.univ])
         M[same] = np.nan
-        return {"opps": opps, "w": w / w.sum(), "M": M, "lane": opp_lane}
+        # Minf : M avec NaN -> −inf, calculé une fois (topx_cover le refaisait sur chaque lot de pools)
+        return {"opps": opps, "w": w / w.sum(), "M": M, "Minf": np.nan_to_num(M, nan=-np.inf), "lane": opp_lane}
 
 
-def topx_cover(M, pools, x):
-    S = np.sort(np.nan_to_num(M[pools], nan=-np.inf), axis=1)
+def topx_cover(Minf, pools, x):
+    S = np.sort(Minf[pools], axis=1)
     return S[:, -x:, :].mean(axis=1)
+
+
+CHUNK = 2_000   # pools évalués par lot : borne la taille des tableaux temporaires (pools × 5 × adversaires)
 
 
 # ---------------------------------------------------------------- bans conseillés
@@ -226,15 +230,17 @@ def optimise(R, must, mastery, weights, rng, also=None):
 
     def raw_terms(pools):
         pools = np.atleast_2d(pools)
-        out = {k: np.mean([topx_cover(b["M"], pools, X) @ b["w"] for b in R.blocks[k]], axis=0) for k in ("lane", "out")}
+        out = {k: np.mean([topx_cover(b["Minf"], pools, X) @ b["w"] for b in R.blocks[k]], axis=0) for k in ("lane", "out")}
         out["syn"] = np.mean([np.nanmean(b["M"][pools], axis=1) @ b["w"] for b in R.blocks["syn"]], axis=0)
-        out["util"] = np.mean([topx_cover(b["M"], pools, X) @ b["w"] for b in R.blocks["syn"]], axis=0)
+        out["util"] = np.mean([topx_cover(b["Minf"], pools, X) @ b["w"] for b in R.blocks["syn"]], axis=0)
         out["mastery"] = mastery[pools].mean(axis=1)
         out["valid"] = R.is_blind[pools].any(axis=1)
         return out
 
     sample = np.array([must_idx + list(rng.choice(free_idx, k_free, replace=False)) for _ in range(N_NORM_SAMPLE)])
-    r0 = raw_terms(sample)
+    # chaque pool est noté indépendamment : évaluer l'échantillon par lots donne les mêmes valeurs, avec moins de mémoire
+    parts = [raw_terms(sample[i:i + CHUNK]) for i in range(0, len(sample), CHUNK)]
+    r0 = {t: np.concatenate([p[t] for p in parts]) for t in TERMS}
     norm = {t: (r0[t].mean(), r0[t].std() or 1.0) for t in TERMS}
 
     def score(pools):
@@ -248,7 +254,7 @@ def optimise(R, must, mastery, weights, rng, also=None):
     if n_comb <= MAX_EXHAUSTIVE:
         it = itertools.combinations(free_idx, k_free)
         while True:
-            chunk = list(itertools.islice(it, 20_000))
+            chunk = list(itertools.islice(it, CHUNK))
             if not chunk:
                 break
             pools = np.array([must_idx + list(c) for c in chunk])
