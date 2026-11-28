@@ -9,3 +9,11 @@ for src, dst in [("blindability_data.json", "blindability.json"), ("pool_advice.
     if os.path.isfile(src):
         shutil.copy(src, os.path.join(BASE, "site", dst))
         print("site/" + dst + " copié")
+
+# données du visualiseur de parties (onglet Replay) : site/replays/<ID>.json
+import replay
+os.makedirs(os.path.join(BASE, "site", "replays"), exist_ok=True)
+for mid in sorted(replay.available()):
+    with open(os.path.join(BASE, "site", "replays", mid + ".json"), "wb") as f:
+        f.write(replay.game_json(mid))
+print(len(replay.available()), "partie(s) écrite(s) dans site/replays/")

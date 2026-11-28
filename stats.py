@@ -147,7 +147,7 @@ def build():
                       "queueId": info.get("queueId"),
                       "queue": QUEUES.get(info.get("queueId"), f"Queue {info.get('queueId')}"),
                       "win100": next(p["win"] for p in P if p["teamId"] == 100), "kills": tk,
-                      "gd": gd, "gdt": [fr["timestamp"] // 1000 for fr in tl], "players": out})
+                      "gd": gd, "gdt": [fr["timestamp"] // 1000 for fr in tl], "replay": bool(tl), "players": out})
     games.sort(key=lambda g: -g["date"])
 
     # parties SoloQ / Flex de la saison, mises en cache par ranked.py

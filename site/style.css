@@ -469,3 +469,9 @@ svg a.cplink:hover text,svg a.cplink:hover{fill:var(--gold);text-decoration:unde
 .sc-leg small{color:var(--mute)}
 .sc-key{color:var(--mute);font-size:13px;display:inline-flex;align-items:center;gap:6px}.sc-key i{width:18px;border-top:1.6px dashed var(--mute)}
 .syn-bar{margin:6px 0 10px}.syn-bar button{cursor:pointer}
+/* Replay : viewer (format 1280×780, mis à l'échelle dans l'iframe) */
+body[data-page=v] main{max-width:1440px}
+iframe.replay{display:block;width:100%;aspect-ratio:1280/780;max-height:calc(100vh - 235px);min-height:360px;border:0;border-radius:10px;background:#0e1621}
+#rg{max-width:min(760px,80vw)}
+#rl{display:flex;gap:8px;align-items:center}
+.ext.rp{white-space:nowrap}

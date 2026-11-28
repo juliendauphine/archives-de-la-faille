@@ -22,14 +22,14 @@ const heat=vals=>{
     :'background:color-mix(in srgb,color-mix(in srgb,var(--blue) '+Math.round((v-mn)/(mx-mn)*100)+'%,var(--red)) 32%,transparent)'};
 
 document.body.insertAdjacentHTML('afterbegin','<header><b>Archives de la Faille</b><nav style="display:flex;gap:18px">'+
-[['index.html','Historique','h'],['players.html','Joueurs','p'],['champions.html','Champions','c'],['champion.html','Fiche champion','m'],['adversaires.html','Adversaires','a'],['records.html','Records','r']]
+[['index.html','Historique','h'],['replay.html','Replay','v'],['players.html','Joueurs','p'],['champions.html','Champions','c'],['champion.html','Fiche champion','m'],['adversaires.html','Adversaires','a'],['records.html','Records','r']]
 .map(x=>'<a href="'+x[0]+'" class="'+((document.body.dataset.page==='j'?'p':document.body.dataset.page)===x[2]?'on':'')+'">'+x[1]+'</a>').join('')+'</nav></header>');
 
 Promise.all([
   fetch('data.json').then(r=>{if(!r.ok)throw 0;return r.json()}),
   fetch('https://ddragon.leagueoflegends.com/api/versions.json').then(r=>r.json()).then(v=>v[0]).catch(()=>null),
   fetch('benchmarks.json').then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(async([D,v,B])=>{BENCH=fixBench(B||{});if(v){VER=v;try{const j=await(await fetch('https://ddragon.leagueoflegends.com/cdn/'+v+'/data/en_US/champion.json')).json();for(const k in j.data)NAMES[k]=j.data[k].name}catch(_){}}D.roles=D.roles||{};D.rows=D.rows.filter(r=>{const R=D.roles[r.p];return !R||!R.length||R.includes(r.pos)});({j:player,a:opponents,h:historyPage,p:players,c:champions,r:records,m:metaChampion})[document.body.dataset.page](D)})
+]).then(async([D,v,B])=>{BENCH=fixBench(B||{});if(v){VER=v;try{const j=await(await fetch('https://ddragon.leagueoflegends.com/cdn/'+v+'/data/en_US/champion.json')).json();for(const k in j.data)NAMES[k]=j.data[k].name}catch(_){}}D.roles=D.roles||{};D.rows=D.rows.filter(r=>{const R=D.roles[r.p];return !R||!R.length||R.includes(r.pos)});({j:player,a:opponents,h:historyPage,v:replayPage,p:players,c:champions,r:records,m:metaChampion})[document.body.dataset.page](D)})
 .catch(e=>{console.error(e);app.innerHTML='<p class="empty">Impossible de charger les données. Lance <code>python serve.py</code> puis ouvre http://localhost:8000</p>'});
 
 function summ(R){
@@ -147,7 +147,7 @@ function historyPage(D){  // pas « history » : masquerait window.history
     (G.length?'<div class="top"><div class="left"><div class="chips">'+chip('Winrate équipe',G)+(qs.length>1?qs.map(q=>chip(q,G.filter(g=>qn(g)===q))).join(''):'')+'</div><img class="vnl" src="assets/vanilla.png" alt="Vanilla Gaming"></div><div class="pies">'+pie(100,G)+pie(200,G)+'</div></div>'+
     G.map(g=>{
       const t=ours(g,sel),w=won(g,sel),us=g.players.filter(p=>p.team===t),op=g.players.filter(p=>p.team!==t);
-      return '<div class="g '+(w?'w':'l')+'" id="'+esc(g.id)+'"><div class="gh" tabindex="0"><span class="side '+(t===100?'b':'r')+'">'+(t===100?'Blue':'Red')+' side</span><b class="'+(w?'win':'loss')+'">'+(w?'Victoire':'Défaite')+'</b><span class="tm">'+us.map(p=>img(p.champ,36)).join('')+'<i>vs</i>'+op.map(p=>img(p.champ,36)).join('')+'</span><span class="meta">'+esc(qn(g))+' · '+mmss(g.dur)+' · '+dt(g.date)+(dpmUrl(g,t)?' · <a class="ext" href="'+dpmUrl(g,t)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">dpm.lol ↗</a>':'')+' · <a class="ext" href="'+draftUrl(g)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">Draft ↗</a></span></div><div class="gd"></div></div>';
+      return '<div class="g '+(w?'w':'l')+'" id="'+esc(g.id)+'"><div class="gh" tabindex="0"><span class="side '+(t===100?'b':'r')+'">'+(t===100?'Blue':'Red')+' side</span><b class="'+(w?'win':'loss')+'">'+(w?'Victoire':'Défaite')+'</b><span class="tm">'+us.map(p=>img(p.champ,36)).join('')+'<i>vs</i>'+op.map(p=>img(p.champ,36)).join('')+'</span><span class="meta">'+(g.replay?'<a class="ext rp" href="replay.html#'+esc(g.id)+'" onclick="event.stopPropagation()" title="Revoir la partie sur la carte">▶ Replay</a> · ':'')+esc(qn(g))+' · '+mmss(g.dur)+' · '+dt(g.date)+(dpmUrl(g,t)?' · <a class="ext" href="'+dpmUrl(g,t)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">dpm.lol ↗</a>':'')+' · <a class="ext" href="'+draftUrl(g)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">Draft ↗</a></span></div><div class="gd"></div></div>';
     }).join(''):'<p class="empty">Aucune partie. Télécharge-en avec download.py (voir l’en-tête du fichier).</p>');
     $('#f').onchange=e=>{sel=e.target.value;draw()};
     app.querySelectorAll('.g').forEach(el=>{
@@ -160,6 +160,31 @@ function historyPage(D){  // pas « history » : masquerait window.history
   };draw();
   const id=decodeURIComponent(location.hash.slice(1)),el=id&&document.getElementById(id);
   if(el){el.querySelector('.gh').click();el.scrollIntoView()}
+}
+
+// Visualiseur de parties : replay/index.html (viewer porté de visu_lol) dans une iframe, données /replay_api
+function replayPage(D){
+  const G=D.games.filter(g=>g.replay);
+  if(!G.length){app.innerHTML='<h1>Replay</h1><p class="empty">Aucune partie avec timeline dans games/. Télécharge-en avec download.py.</p>';return}
+  const nm=c=>esc(NAMES[c]||c);
+  const label=g=>{const t=ours(g,''),us=g.players.filter(p=>p.team===t),op=g.players.filter(p=>p.team!==t);
+    return dt(g.date)+' · '+qn(g)+' · '+(won(g,'')?'Victoire':'Défaite')+' · '+mmss(g.dur)+' · '+us.map(p=>nm(p.champ)).join(', ')+' vs '+op.map(p=>nm(p.champ)).join(', ')};
+  const cur=()=>{const id=decodeURIComponent(location.hash.slice(1).split('&')[0]);return G.find(g=>g.id===id)||G[0]};
+  let g=cur();
+  app.innerHTML='<h1>Replay</h1><div class="bar"><label>Partie <select id="rg">'+G.map(x=>'<option value="'+esc(x.id)+'">'+label(x)+'</option>').join('')+'</select></label><span id="rl"></span></div>'+
+    '<iframe class="replay" id="rf" title="Replay de la partie" allow="fullscreen"></iframe>'+
+    '<p class="legend">Raccourcis (clique d’abord sur le replay) : <b>Espace</b> lecture / pause · <b>← →</b> ±15 s · <b>Début / Fin</b> · <b>1…6</b> vitesse 1× à 80×. '+
+    'Positions interpolées entre les relevés de la timeline (une par minute), retours à la base déduits des achats.</p>';
+  const sel=$('#rg'),fr=$('#rf');
+  const show=hash=>{
+    g=G.find(x=>x.id===hash.split('&')[0])||g;sel.value=g.id;
+    const t=ours(g,'');
+    $('#rl').innerHTML='<span class="side '+(t===100?'b':'r')+'">'+(t===100?'Blue':'Red')+' side</span> <b class="'+(won(g,'')?'win':'loss')+'">'+(won(g,'')?'Victoire':'Défaite')+'</b> · <a class="ext" href="index.html#'+esc(g.id)+'">Stats de la partie ↗</a>';
+    fr.src='replay/index.html#'+hash};
+  const h0=location.hash.slice(1);show(h0&&h0.split('&')[0]===g.id?h0:g.id);
+  sel.onchange=()=>{history.replaceState(null,'','#'+sel.value);show(sel.value)};
+  addEventListener('hashchange',()=>show(location.hash.slice(1)||G[0].id));
+  fr.onload=()=>fr.focus();
 }
 
 // Tableau de champions triable (clic sur un en-tête). st = {key,dir} conservé entre les rendus

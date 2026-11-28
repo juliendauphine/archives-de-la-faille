@@ -71,7 +71,20 @@ def _champion_api(query):
         return "400 Bad Request", json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
 
 
-API = {"/pool_advice_api": _advice_api, "/champion_api": _champion_api}
+def _replay_api(query):
+    """GET /replay_api?id=<MATCH_ID> : données du visualiseur de partie (replay.py) pour une partie de games/."""
+    from urllib.parse import parse_qs
+    import replay
+    mid = parse_qs(query or "").get("id", [""])[0]
+    try:
+        return "200 OK", replay.game_json(mid)
+    except FileNotFoundError as e:
+        return "404 Not Found", json.dumps({"error": str(e)}, ensure_ascii=False).encode("utf-8")
+    except Exception as e:
+        return "400 Bad Request", json.dumps({"error": repr(e)}, ensure_ascii=False).encode("utf-8")
+
+
+API = {"/pool_advice_api": _advice_api, "/champion_api": _champion_api, "/replay_api": _replay_api}
 
 
 # ------------------------------------------------------------------ cache HTTP / gzip

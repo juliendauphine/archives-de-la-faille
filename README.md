@@ -42,6 +42,7 @@ J'ai donc construit **Archives de la Faille** : un pipeline de données complet,
 | **Optimisation combinatoire** | Recherche exhaustive ou échantillonnée (jusqu'à 600 000 pools), score multi-critères normalisé en écarts-types, contraintes |
 | **Simulation Monte-Carlo** | Probabilité d'être contré en blind pick, analyse de sensibilité |
 | **Data visualisation** | Radar, beeswarm, heatmaps, scatter plots… tous dessinés à la main en SVG/JS, sans librairie |
+| **Reconstitution de données** | Replay animé des parties : positions, inventaires, retours à la base et objectifs déduits des timelines Riot (une position par minute) |
 | **Mise en production** | Serveur WSGI (Gunicorn) sur Render, cache HTTP (ETag, gzip), données précalculées pour tenir dans 512 Mo de RAM |
 
 ---
@@ -110,7 +111,30 @@ Le **beeswarm des Δ2** de matchups agrège plusieurs patchs avec leurs interval
 
 <p align="center"><img src="docs/images/matchups_d2.png" alt="Beeswarm des matchups d'Ahri" width="850"></p>
 
-### 6. Et aussi…
+### 6. 🎬 Replay des parties
+
+L'onglet **Replay** rejoue chaque partie de l'équipe sur la carte, à la manière du replayer du jeu : champions qui se déplacent, tours et inhibiteurs détruits, monstres épiques vivants (avec compte à rebours avant leur apparition), retours à la base, et un panneau qui suit en direct le score, l'or, les CS, le niveau et l'inventaire de chaque joueur. Le bouton **« ▶ Replay »** de l'historique ouvre directement la partie.
+
+<p align="center"><img src="docs/images/replay.png" alt="Replay d'une partie : panneau des joueurs, carte et barre de lecture" width="850"></p>
+
+- **Barre de lecture** avec les repères des kills, objectifs et bâtiments, et des **bulles d'événements** (tueur → victime avec les assistants, PREMIER SANG, multi-kills, ACE, objectif pris…) ; vitesse de 1× à 80×.
+- **Courbe d'écart d'or** sur toute la partie : le survol donne l'écart à cet instant, un clic y amène la lecture.
+- **Lien direct vers un instant** : `replay.html#EUW1_8058931803&t=1890&speed=10` ouvre la partie à 31:30 en vitesse 10×.
+- **Raccourcis** : `Espace` lecture / pause, `←` / `→` ±15 s, `Début` / `Fin`, `1` … `6` pour la vitesse.
+
+L'API Riot ne donne pas tout ce que montre le jeu : `replay.py` reconstitue le reste à partir du match et de sa timeline.
+
+| Information | Comment elle est déduite |
+|---|---|
+| Positions | Une position par minute dans la timeline, complétée par celles des kills et des objectifs, puis interpolée en ligne droite |
+| Retours à la base | Il n'existe pas d'événement « recall » : on n'achète qu'à la fontaine, donc chaque passage en boutique hors respawn est un retour (8 s de canalisation) |
+| Inventaires | Reconstruits à partir des achats, ventes, destructions et annulations (y compris l'évolution de l'item support) ; l'inventaire officiel est appliqué en fin de partie |
+| Temps de mort | Calculé à partir du niveau et du temps de jeu |
+| Monstres épiques | Heures d'apparition selon les règles du patch (dragon 5:00, larves 8:00, Héraut 15:00, Baron 20:00…), avancées si un monstre est tué plus tôt |
+
+Les images (champions, items, runes, sorts, carte) viennent de [Data Dragon](https://developer.riotgames.com/docs/lol#data-dragon), dans la version correspondant au patch de la partie.
+
+### 7. Et aussi…
 
 <table>
 <tr>
@@ -164,13 +188,15 @@ Le notebook `team_pool.ipynb` étend l'optimiseur à l'équipe entière : **desc
 ┌──────────────┐    ┌───────────────────────┐    ┌────────────────────┐    ┌──────────────┐
 │  API Riot    │──▶│ download.py / ranked.py│──▶│  stats.py           │──▶│              │
 │  (matchs,    │    │ cache incrémental      │    │ stats par partie   │    │              │
-│  timelines)  │    └───────────────────────┘    └────────────────────┘    │  serve.py    │
-└──────────────┘                                                           │  (WSGI,      │──▶ site/ (HTML/CSS/JS,
+│  timelines)  │    └───────────────────────┘    │ replay.py          │    │  serve.py    │
+│              │                                 │ données du replay  │    │              │
+└──────────────┘                                 └────────────────────┘    │  (WSGI,      │──▶ site/ (HTML/CSS/JS,
 ┌──────────────┐    ┌───────────────────────┐    ┌────────────────────┐    │  Gunicorn)   │    graphes SVG faits main)
 │ Données méta │──▶│ notebooks Jupyter      │──▶│ prepare_data.py     │──▶│              │
 │ (patchs)     │    │ Δ2, blindability,      │    │ pool_advice.py     │    │  API :       │
 └──────────────┘    │ percentiles            │    │ (précalculs JSON)  │    │  /pool_advice│
                     └───────────────────────┘    └────────────────────┘    │  /champion   │
+                                                                           │  /replay     │
                                                                            └──────────────┘
 ```
 
@@ -179,9 +205,11 @@ Le notebook `team_pool.ipynb` étend l'optimiseur à l'équipe entière : **desc
 | `download.py` | Télécharge les parties choisies (Clash, 5c5 classé) avec leur timeline |
 | `ranked.py` | Met à jour le cache SoloQ / Flex de la saison pour chaque joueur suivi |
 | `stats.py` | Calcule les stats de chaque participant (dont stats à 15 min issues des timelines) |
+| `replay.py` | Prépare les données du replay d'une partie (positions, inventaires, objectifs…), servies sur `/replay_api` |
 | `pool_advice.py` | Moteur d'optimisation du champion pool et des bans |
 | `prepare_data.py` | Précalcule true winrates, biais de sélection et courbes de scaling |
 | `serve.py` | Serveur WSGI : fichiers statiques, API de recalcul, cache HTTP / gzip |
+| `site/replay/` | Visualiseur de parties (JS sans dépendance), affiché dans l'onglet Replay |
 | `notebooks/`, `percentiles/` | Exploration et méthodologie (pool individuel, pool d'équipe, percentiles) |
 
 ---
