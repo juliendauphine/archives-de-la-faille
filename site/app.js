@@ -781,6 +781,74 @@ function beeswarm(ys,d){
 // pool affiché par le graphe de blindabilité : celui sélectionné dans le champion pool conseillé (adviceBlock),
 // sinon le champion pool détecté. BLIND_REDRAW redessine le graphe quand la sélection change.
 let BLIND_POOL=null,BLIND_REDRAW=null;
+// SVG du beeswarm : R = blindability.roles[rk], rank = {champId: rang} des champions mis en avant.
+// opt.single : un seul champion mis en avant (fiche champion) → ni badge, ni moyenne de pool, ni crochet ;
+// opt.href(nom) : lien sur chaque icône.
+function blindSvg(R,rk,rlabel,mode,rank,opt){
+  const col=BCOL[rk],single=!!opt.single;
+  const L=Object.entries(R).map(([n,v])=>({n,id:champId(n),v:100*(v['p_counter_'+mode]??0)})).sort((a,b)=>a.v-b.v);
+  const mine=L.filter(o=>rank[o.id]).sort((a,b)=>rank[a.id]-rank[b.id]);
+  // géométrie (unités du viewBox)
+  const W=960,H=540,top=14,bot=H-14,left=56,pw=W-left,yv=v=>top+(1-v/104)*(bot-top);
+  const cx=left+pw*.36,half=pw*.29;
+  let d=32,xs;
+  for(;;){xs=beeswarm(L.map(o=>yv(o.v)),d*1.02);if(Math.max(...xs.map(Math.abs))+d/2<=half||d<12)break;d*=.92}
+  const f=v=>v.toFixed(1);
+  const icon=(o,x,y,s,cls,badge)=>{const ring=Math.max(1.5,s*.07),inn=s-2*ring,im=inn/.88;
+    const g='<g class="'+cls+'"><title>'+esc(NAMES[o.id]||o.n)+' — '+num(o.v)+' %</title>'+
+      '<circle cx="'+f(x)+'" cy="'+f(y)+'" r="'+f(s/2)+'" fill="'+col+'"/>'+
+      '<circle cx="'+f(x)+'" cy="'+f(y)+'" r="'+f(inn/2)+'" fill="var(--line)"/>'+
+      '<image href="https://ddragon.leagueoflegends.com/cdn/'+VER+'/img/champion/'+encodeURIComponent(o.id)+'.png" x="'+f(x-im/2)+'" y="'+f(y-im/2)+'" width="'+f(im)+'" height="'+f(im)+'" clip-path="url(#bclip)"/>'+
+      (badge?'<circle cx="'+f(x+s*.36)+'" cy="'+f(y+s*.36)+'" r="9" fill="var(--gold)"/><text x="'+f(x+s*.36)+'" y="'+f(y+s*.36+4)+'" text-anchor="middle" class="bb">'+badge+'</text>':'')+'</g>';
+    return opt.href?'<a href="'+opt.href(o.n)+'">'+g+'</a>':g};
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" class="blind-svg" role="img" aria-label="Probabilité d’être contré par champion en '+rlabel+'"><defs><clipPath id="bclip" clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".44"/></clipPath></defs>';
+  [0,25,50,75,100].forEach(t=>svg+='<line x1="'+left+'" x2="'+W+'" y1="'+f(yv(t))+'" y2="'+f(yv(t))+'" class="bg"/><text x="'+(left-8)+'" y="'+f(yv(t)+4)+'" text-anchor="end" class="bt">'+t+' %</text>');
+  // champions non retenus en arrière-plan, puis ceux du pool par-dessus
+  L.forEach((o,i)=>{if(!rank[o.id])svg+=icon(o,cx+xs[i],yv(o.v),d,'bo')});
+  const avg=L.reduce((a,o)=>a+o.v,0)/L.length,hw=Math.max(Math.max(...xs.map(Math.abs))+d*.7,3*d);
+  svg+='<line x1="'+f(cx-hw)+'" x2="'+f(cx+hw)+'" y1="'+f(yv(avg))+'" y2="'+f(yv(avg))+'" class="bm"/><text x="'+f(cx-hw-8)+'" y="'+f(yv(avg)+4)+'" text-anchor="end" class="bl">moy. rôle '+num(avg)+' %</text>';
+  if(mine.length&&single){
+    const o=mine[0],i=L.indexOf(o),x=cx+xs[i],y=yv(o.v),bx=cx+hw+26,big=Math.min(56,d*1.7);
+    svg+=icon(o,x,y,d*1.4,'bi')+'<path d="M'+f(x+d*.7+4)+' '+f(y)+'H'+f(bx+70)+'" class="bk" style="stroke:'+col+'"/>';
+    const rk_=L.indexOf(o)+1;
+    svg+=icon(o,bx+100+big/2,y,big,'bi')+'<text x="'+f(bx+100+big+10)+'" y="'+f(y-2)+'" class="bn">'+esc(NAMES[o.id]||o.n)+'  '+num(o.v)+' %</text>'+
+      '<text x="'+f(bx+100+big+10)+'" y="'+f(y+18)+'" class="bl">'+rk_+'<tspan baseline-shift="super" font-size="70%">e</tspan> / '+L.length+' · '+num(o.v-avg,1,1)+' pts vs moy.</text>';
+  }else if(mine.length){
+    const pavg=mine.reduce((a,o)=>a+o.v,0)/mine.length,close=Math.abs(yv(pavg)-yv(avg))<14;
+    svg+='<line x1="'+f(cx-hw)+'" x2="'+f(cx+hw)+'" y1="'+f(yv(pavg))+'" y2="'+f(yv(pavg))+'" class="bp"/><text x="'+f(cx-hw-8)+'" y="'+f(yv(pavg)+(close?(pavg<avg?-8:16):4))+'" text-anchor="end" class="bl bpl">moy. pool '+num(pavg)+' %</text>';
+    mine.slice().reverse().forEach(o=>{const i=L.indexOf(o);svg+=icon(o,cx+xs[i],yv(o.v),d*1.3,'bi',rank[o.id])});
+    // crochet entre le meilleur et le pire blind du pool
+    const lo=mine.reduce((a,o)=>o.v<a.v?o:a),hi=mine.reduce((a,o)=>o.v>a.v?o:a),bx=cx+hw+26,big=Math.min(56,d*1.7);
+    let yh=yv(hi.v),yl=yv(lo.v);
+    if(yl-yh<big+6){const m=(yh+yl)/2;yh=m-(big+6)/2;yl=m+(big+6)/2}
+    svg+='<path d="M'+f(bx-9)+' '+f(yv(hi.v))+'H'+f(bx)+'V'+f(yv(lo.v))+'H'+f(bx-9)+'" class="bk" style="stroke:'+col+'"/>';
+    if(lo!==hi)svg+='<text x="'+f(bx+14)+'" y="'+f((yv(lo.v)+yv(hi.v))/2+9)+'" class="bd" style="fill:'+col+'">'+num(hi.v-lo.v)+' %</text>';
+    [[hi,yh],[lo,yl]].forEach(([o,y],k)=>{if(k&&lo===hi)return;const x=bx+100+big/2;
+      svg+=icon(o,x,y,big,'bi')+'<text x="'+f(x+big/2+10)+'" y="'+f(y+5)+'" class="bn">'+esc(NAMES[o.id]||o.n)+'  '+num(o.v)+' %</text>'});
+  }
+  return {svg:svg+'</svg>',L,mine};
+}
+// graphe de blindabilité de la fiche champion : le champion mis en avant parmi tous les champions méta du rôle
+let CB_MODE='matchups_synergies';   // gardé quand la fiche se redessine
+function champBlindChart(host,champ,role,href){
+  if(!host||!BCOL[role])return;
+  getBlind().then(B=>{
+    const R=B&&B.roles&&B.roles[role];if(!R||!host.isConnected){host.remove();return}
+    const P=B.params||{},col=BCOL[role],thr=P.counter_threshold??-2,id=champId(champ);
+    const draw=()=>{
+      const {svg,L,mine}=blindSvg(R,role,lname(role),CB_MODE,{[id]:1},{single:true,href});
+      const pools=Object.entries(P.pool_sizes||{}).map(([l,n])=>(BLAB[l]||l)+' '+n).join(', ');
+      host.innerHTML='<section class="blind"><h2>Blindability</h2><div class="bar"><b>Chance d’un counter <span style="color:var(--blue)">'+num(thr,0,1).replace('-','−')+' %</span> '+(CB_MODE==='matchups'?'(toutes lanes)':'(toutes lanes + alliés)')+' — <span style="color:'+col+'">'+BLAB[role]+'</span></b>'+
+        [['matchups_synergies','+ synergies alliées'],['matchups','Matchups seuls']].map(([k,l])=>'<button data-bm="'+k+'" class="'+(k===CB_MODE?'on':'')+'">'+l+'</button>').join('')+'</div>'+
+        '<div class="cbody">'+svg+'</div>'+
+        '<p class="legend">Probabilité qu’au moins un adversaire'+(CB_MODE==='matchups'?'':' (ou un allié)')+' ait dans son pool un champion qui fait perdre au moins '+Math.abs(thr)+' pts de winrate (sous la moyenne du champion). Plus c’est bas, plus le champion se blind pick facilement. '+
+        (mine.length?'En couleur : '+esc(NAMES[id]||champ)+' ; les autres champions du rôle sont en transparence (clic : leur fiche). ':'<b>'+esc(NAMES[id]||champ)+' est hors données</b> (pick rate &lt; '+num(P.min_playrate??.5,1)+' % en '+lname(role)+'). ')+
+        L.length+' champions · méta '+(P.meta_patches||[]).join(', ')+' · méthode '+esc(P.method||'')+' · pool : '+pools+'.</p></section>';
+      host.querySelectorAll('button[data-bm]').forEach(b=>b.onclick=()=>{CB_MODE=b.dataset.bm;draw()});
+    };
+    draw();
+  });
+}
 function blindChart(host,D,p,role){
   const rk=BROLE[role];if(!host||!rk)return;
   getBlind().then(B=>{
@@ -794,41 +862,8 @@ function blindChart(host,D,p,role){
       const cur=BLIND_POOL?BLIND_POOL.champs:detected,plabel=BLIND_POOL?BLIND_POOL.label:'champion pool',rank={};
       cur.forEach((c,i)=>rank[champId(c)]=i+1);
       const P=B.params||{},col=BCOL[rk],thr=P.counter_threshold??-2;
-      const L=Object.entries(R).map(([n,v])=>({n,id:champId(n),v:100*(v['p_counter_'+mode]??0)})).sort((a,b)=>a.v-b.v);
-      const mine=L.filter(o=>rank[o.id]).sort((a,b)=>rank[a.id]-rank[b.id]);
+      const {svg,L,mine}=blindSvg(R,rk,roleName(role),mode,rank,{});
       const missing=cur.filter(c=>!L.some(x=>x.id===champId(c))).map(c=>esc(NAMES[champId(c)]||c));
-      // géométrie (unités du viewBox)
-      const W=960,H=540,top=14,bot=H-14,left=56,pw=W-left,yv=v=>top+(1-v/104)*(bot-top);
-      const cx=left+pw*.36,half=pw*.29;
-      let d=32,xs;
-      for(;;){xs=beeswarm(L.map(o=>yv(o.v)),d*1.02);if(Math.max(...xs.map(Math.abs))+d/2<=half||d<12)break;d*=.92}
-      const f=v=>v.toFixed(1);
-      const icon=(o,x,y,s,cls,badge)=>{const ring=Math.max(1.5,s*.07),inn=s-2*ring,im=inn/.88;
-        return '<g class="'+cls+'"><title>'+esc(NAMES[o.id]||o.n)+' — '+num(o.v)+' %</title>'+
-          '<circle cx="'+f(x)+'" cy="'+f(y)+'" r="'+f(s/2)+'" fill="'+col+'"/>'+
-          '<circle cx="'+f(x)+'" cy="'+f(y)+'" r="'+f(inn/2)+'" fill="var(--line)"/>'+
-          '<image href="https://ddragon.leagueoflegends.com/cdn/'+VER+'/img/champion/'+encodeURIComponent(o.id)+'.png" x="'+f(x-im/2)+'" y="'+f(y-im/2)+'" width="'+f(im)+'" height="'+f(im)+'" clip-path="url(#bclip)"/>'+
-          (badge?'<circle cx="'+f(x+s*.36)+'" cy="'+f(y+s*.36)+'" r="9" fill="var(--gold)"/><text x="'+f(x+s*.36)+'" y="'+f(y+s*.36+4)+'" text-anchor="middle" class="bb">'+badge+'</text>':'')+'</g>'};
-      let svg='<svg viewBox="0 0 '+W+' '+H+'" class="blind-svg" role="img" aria-label="Probabilité d’être contré par champion en '+roleName(role)+'"><defs><clipPath id="bclip" clipPathUnits="objectBoundingBox"><circle cx=".5" cy=".5" r=".44"/></clipPath></defs>';
-      [0,25,50,75,100].forEach(t=>svg+='<line x1="'+left+'" x2="'+W+'" y1="'+f(yv(t))+'" y2="'+f(yv(t))+'" class="bg"/><text x="'+(left-8)+'" y="'+f(yv(t)+4)+'" text-anchor="end" class="bt">'+t+' %</text>');
-      // champions non retenus en arrière-plan, puis ceux du pool par-dessus
-      L.forEach((o,i)=>{if(!rank[o.id])svg+=icon(o,cx+xs[i],yv(o.v),d,'bo')});
-      const avg=L.reduce((a,o)=>a+o.v,0)/L.length,hw=Math.max(Math.max(...xs.map(Math.abs))+d*.7,3*d);
-      svg+='<line x1="'+f(cx-hw)+'" x2="'+f(cx+hw)+'" y1="'+f(yv(avg))+'" y2="'+f(yv(avg))+'" class="bm"/><text x="'+f(cx-hw-8)+'" y="'+f(yv(avg)+4)+'" text-anchor="end" class="bl">moy. rôle '+num(avg)+' %</text>';
-      if(mine.length){
-        const pavg=mine.reduce((a,o)=>a+o.v,0)/mine.length,close=Math.abs(yv(pavg)-yv(avg))<14;
-        svg+='<line x1="'+f(cx-hw)+'" x2="'+f(cx+hw)+'" y1="'+f(yv(pavg))+'" y2="'+f(yv(pavg))+'" class="bp"/><text x="'+f(cx-hw-8)+'" y="'+f(yv(pavg)+(close?(pavg<avg?-8:16):4))+'" text-anchor="end" class="bl bpl">moy. pool '+num(pavg)+' %</text>';
-        mine.slice().reverse().forEach(o=>{const i=L.indexOf(o);svg+=icon(o,cx+xs[i],yv(o.v),d*1.3,'bi',rank[o.id])});
-        // crochet entre le meilleur et le pire blind du pool
-        const lo=mine.reduce((a,o)=>o.v<a.v?o:a),hi=mine.reduce((a,o)=>o.v>a.v?o:a),bx=cx+hw+26,big=Math.min(56,d*1.7);
-        let yh=yv(hi.v),yl=yv(lo.v);
-        if(yl-yh<big+6){const m=(yh+yl)/2;yh=m-(big+6)/2;yl=m+(big+6)/2}
-        svg+='<path d="M'+f(bx-9)+' '+f(yv(hi.v))+'H'+f(bx)+'V'+f(yv(lo.v))+'H'+f(bx-9)+'" class="bk" style="stroke:'+col+'"/>';
-        if(lo!==hi)svg+='<text x="'+f(bx+14)+'" y="'+f((yv(lo.v)+yv(hi.v))/2+9)+'" class="bd" style="fill:'+col+'">'+num(hi.v-lo.v)+' %</text>';
-        [[hi,yh],[lo,yl]].forEach(([o,y],k)=>{if(k&&lo===hi)return;const x=bx+100+big/2;
-          svg+=icon(o,x,y,big,'bi')+'<text x="'+f(x+big/2+10)+'" y="'+f(y+5)+'" class="bn">'+esc(NAMES[o.id]||o.n)+'  '+num(o.v)+' %</text>'});
-      }
-      svg+='</svg>';
       const pools=Object.entries(P.pool_sizes||{}).map(([l,n])=>(BLAB[l]||l)+' '+n).join(', ');
       host.innerHTML='<section class="blind"><h2>Blindability <small class="blind-of">'+esc(plabel)+' : '+cur.map(c=>img(champId(c),20,1)).join('')+'</small></h2><div class="bar"><b>Chance d’un counter <span style="color:var(--blue)">'+num(thr,0,1).replace('-','−')+' %</span> '+(mode==='matchups'?'(toutes lanes)':'(toutes lanes + alliés)')+' — <span style="color:'+col+'">'+BLAB[rk]+'</span></b>'+
         [['matchups_synergies','+ synergies alliées'],['matchups','Matchups seuls']].map(([k,l])=>'<button data-m="'+k+'" class="'+(k===mode?'on':'')+'">'+l+'</button>').join('')+'</div>'+
@@ -1201,9 +1236,10 @@ function metaChampion(){
     app.innerHTML='<h1>Fiche champion</h1><div class="bar mpick"><label>Rôle <select id="mrole">'+MLANES.map(l=>'<option value="'+l+'"'+(l===role?' selected':'')+'>'+lname(l)+'</option>').join('')+'</select></label>'+
       '<span class="adv-ac"><input id="msearch" placeholder="Chercher un champion…" aria-label="Champion" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="mlist" autocomplete="off"><ul id="mlist" class="adv-ac-list" role="listbox" hidden></ul></span>'+
       '<small>'+opts.length+' champions en '+lname(role)+(LIST?.patch?' · patch '+esc(LIST.patch):'')+'</small></div>'+
-      hero()+biasBox()+profile()+
+      hero()+biasBox()+profile()+'<div id="mblind"></div>'+
       '<div class="adv-bans mtops">'+topBox('5 plus gros counters','matchups',1)+topBox('5 meilleures synergies','synergies',-1)+'</div>'+
       explorer();
+    champBlindChart($('#mblind'),champ,role,c=>link(c,role));
     // navigation
     $('#mrole').onchange=e=>{const r=e.target.value,o=LIST.roles[r];load(o.some(x=>x.c===champ)?champ:(o.find(x=>x.d2)||o[0]).c,r)};
     app.querySelectorAll('[data-go]').forEach(a=>a.onclick=e=>{e.preventDefault();load(champ,a.dataset.go)});
